@@ -2,6 +2,7 @@
 import { storeToRefs } from 'pinia';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
 
+import AvatarStage from '@/components/AvatarStage.vue';
 import InputBar from '@/components/InputBar.vue';
 import MessageList from '@/components/MessageList.vue';
 import { useChatStore } from '@/stores/chat';
@@ -36,23 +37,30 @@ async function onSend(text: string) {
 </script>
 
 <template>
-  <section class="max-w-3xl mx-auto px-4 py-4 flex flex-col gap-3 h-[calc(100vh-60px)]">
-    <div class="flex items-center gap-3 text-xs text-slate-500">
-      <span>
-        后端：
-        <span v-if="backendOk === null">检查中…</span>
-        <span v-else-if="backendOk" class="text-emerald-600">OK · v{{ backendVersion }}</span>
-        <span v-else class="text-rose-600">未就绪（请启动 uvicorn）</span>
-      </span>
-      <span>·</span>
-      <span>连接：{{ connection }}</span>
-      <span>·</span>
-      <span>状态：{{ agentState }}</span>
-      <span v-if="session" class="text-slate-400">· {{ session.id }}</span>
-      <span v-if="lastError" class="text-rose-600">· {{ lastError }}</span>
+  <section class="h-[calc(100vh-60px)] flex flex-col lg:flex-row">
+    <!-- Avatar panel -->
+    <div class="lg:flex-1 h-72 lg:h-auto border-r border-slate-200 relative">
+      <AvatarStage />
+      <div class="absolute top-2 left-2 text-xs bg-white/80 backdrop-blur rounded px-2 py-1 flex gap-2">
+        <span>
+          后端：
+          <span v-if="backendOk === null">…</span>
+          <span v-else-if="backendOk" class="text-emerald-600">v{{ backendVersion }}</span>
+          <span v-else class="text-rose-600">未就绪</span>
+        </span>
+        <span>·</span>
+        <span>{{ connection }}</span>
+        <span>·</span>
+        <span>{{ agentState }}</span>
+      </div>
     </div>
 
-    <div class="flex-1 min-h-0 border border-slate-200 rounded-lg overflow-hidden flex flex-col bg-white">
+    <!-- Chat panel -->
+    <div class="flex-1 min-w-0 flex flex-col bg-white">
+      <div class="px-4 py-2 text-xs text-slate-500 border-b border-slate-100 flex gap-2">
+        <span>会话：{{ session?.id ?? '未建立' }}</span>
+        <span v-if="lastError" class="text-rose-600">· {{ lastError }}</span>
+      </div>
       <MessageList :messages="messages" class="flex-1 min-h-0" />
       <InputBar :disabled="connection === 'error'" @send="onSend" />
     </div>
