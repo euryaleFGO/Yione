@@ -12,7 +12,8 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import BACKEND_ROOT, get_settings
 from app.integrations.ling_adapter import inject_ling_path
-from app.routers import health
+from app.routers import chat, health, sessions
+from app.ws import chat_ws
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +49,9 @@ def create_app() -> FastAPI:
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
 
     app.include_router(health.router, prefix="/api")
+    app.include_router(sessions.router, prefix="/api")
+    app.include_router(chat.router, prefix="/api")
+    app.include_router(chat_ws.router)
 
     return app
 

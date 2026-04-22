@@ -1,8 +1,15 @@
 <script setup lang="ts">
-import { onMounted, ref } from 'vue';
+import { storeToRefs } from 'pinia';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 
+import InputBar from '@/components/InputBar.vue';
+import MessageList from '@/components/MessageList.vue';
+import { useChatStore } from '@/stores/chat';
+
+const chat = useChatStore();
+const { messages, agentState, connection, lastError, session } = storeToRefs(chat);
 const backendOk = ref<boolean | null>(null);
-const backendVersion = ref<string>('');
+const backendVersion = ref('');
 
 onMounted(async () => {
   try {
@@ -12,27 +19,42 @@ onMounted(async () => {
     backendVersion.value = data?.version ?? '';
   } catch {
     backendOk.value = false;
+    return;
+  }
+  try {
+    await chat.connectSocket();
+  } catch {
+    /* errors surfaced via lastError */
   }
 });
+
+onBeforeUnmount(() => chat.disconnect());
+
+async function onSend(text: string) {
+  await chat.submit(text, connection.value === 'open' ? 'ws' : 'rest');
+}
 </script>
 
 <template>
-  <section class="max-w-3xl mx-auto px-6 py-10 space-y-4">
-    <h1 class="text-2xl font-bold">你好，玲 👋</h1>
-    <p class="text-slate-600">
-      M0 骨架：主站 Vue 页面已就位。M1 起会接上
-      <code class="bg-slate-100 px-1 rounded">@webling/core</code> 的 chat / ws 客户端。
-    </p>
+  <section class="max-w-3xl mx-auto px-4 py-4 flex flex-col gap-3 h-[calc(100vh-60px)]">
+    <div class="flex items-center gap-3 text-xs text-slate-500">
+      <span>
+        后端：
+        <span v-if="backendOk === null">检查中…</span>
+        <span v-else-if="backendOk" class="text-emerald-600">OK · v{{ backendVersion }}</span>
+        <span v-else class="text-rose-600">未就绪（请启动 uvicorn）</span>
+      </span>
+      <span>·</span>
+      <span>连接：{{ connection }}</span>
+      <span>·</span>
+      <span>状态：{{ agentState }}</span>
+      <span v-if="session" class="text-slate-400">· {{ session.id }}</span>
+      <span v-if="lastError" class="text-rose-600">· {{ lastError }}</span>
+    </div>
 
-    <div class="rounded-md border border-slate-200 p-4 bg-white">
-      <div class="text-sm text-slate-500">后端健康检查</div>
-      <div v-if="backendOk === null" class="mt-1 text-slate-400">检查中…</div>
-      <div v-else-if="backendOk" class="mt-1 text-emerald-600">
-        OK · backend v{{ backendVersion }}
-      </div>
-      <div v-else class="mt-1 text-rose-600">
-        无响应（确认 <code>uvicorn</code> 已在 8000 端口）
-      </div>
+    <div class="flex-1 min-h-0 border border-slate-200 rounded-lg overflow-hidden flex flex-col bg-white">
+      <MessageList :messages="messages" class="flex-1 min-h-0" />
+      <InputBar :disabled="connection === 'error'" @send="onSend" />
     </div>
   </section>
 </template>

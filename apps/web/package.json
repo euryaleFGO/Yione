@@ -12,6 +12,7 @@
     "test": "vitest run --passWithNoTests"
   },
   "dependencies": {
+    "@webling/core": "workspace:*",
     "pinia": "^2.2.6",
     "reconnecting-websocket": "^4.4.0",
     "vue": "^3.5.32",
