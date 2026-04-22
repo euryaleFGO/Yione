@@ -1,0 +1,16 @@
+pre-commit:
+  parallel: true
+  commands:
+    prettier:
+      glob: "*.{ts,tsx,js,jsx,vue,json,md,yml,yaml}"
+      run: npx prettier --check {staged_files}
+    ruff:
+      glob: "backend/**/*.py"
+      run: backend/.venv/bin/ruff check {staged_files}
+
+commit-msg:
+  commands:
+    conventional:
+      run: |
+        head -n1 "$1" | grep -Eq "^(feat|fix|docs|style|refactor|perf|test|build|ci|chore|revert)(\\(.+\\))?!?: .+" \
+          || { echo "commit message 须遵循 Conventional Commits"; exit 1; }
