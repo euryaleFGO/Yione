@@ -36,6 +36,11 @@ const routes: RouteRecordRaw[] = [
     name: 'knowledge',
     component: () => import('@/views/KnowledgeGraph.vue'),
   },
+  {
+    path: '/prompts',
+    name: 'prompts',
+    component: () => import('@/views/PromptView.vue'),
+  },
 ];
 
 export const router = createRouter({
