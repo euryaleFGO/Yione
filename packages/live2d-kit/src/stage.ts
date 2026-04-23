@@ -63,6 +63,8 @@ export interface AvatarControls {
   speak: (url: string, opts?: SpeakOptions) => Promise<void>;
   stopSpeaking: () => void;
   playMotion: (group: string, index?: number, priority?: number) => Promise<void>;
+  /** 切换面部表情（.exp3.json）；name 对应 model3.json 里 Expressions 的 Name 字段 */
+  setExpression: (name: string) => Promise<void>;
   startPlaceholderMouth: () => void;
   stopPlaceholderMouth: () => void;
 }
@@ -257,6 +259,22 @@ export class AvatarStage {
       // motion 失败不应该冒泡打断主流程；只在控制台留痕
       // eslint-disable-next-line no-console
       console.warn('[live2d] motion failed', group, err);
+    }
+  }
+
+  /**
+   * 切换面部表情（.exp3.json）。name 必须匹配 model3.json 里 Expressions 注册的 Name。
+   * fork 的 model.expression(name) 异步 resolve 到 boolean 表示是否切成功；
+   * 这里统一 swallow 错误 —— 表情挂掉不应该打断对话主流程。
+   */
+  async setExpression(name: string): Promise<void> {
+    const model = this.model as { expression?: (id?: string | number) => Promise<boolean> } | null;
+    if (!model?.expression) return;
+    try {
+      await model.expression(name);
+    } catch (err) {
+      // eslint-disable-next-line no-console
+      console.warn('[live2d] expression failed', name, err);
     }
   }
 

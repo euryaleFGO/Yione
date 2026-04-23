@@ -44,6 +44,7 @@ export const useChatStore = defineStore('chat', () => {
     speak: () => Promise.resolve(),
     stopSpeaking: () => {},
     playMotion: () => Promise.resolve(),
+    setExpression: () => Promise.resolve(),
     startPlaceholderMouth: () => {},
     stopPlaceholderMouth: () => {},
   };
@@ -111,6 +112,10 @@ export const useChatStore = defineStore('chat', () => {
           // 后端推 motion group 名（Hiyori: Tap@Body / Flick / ...），
           // 交给 Live2D 播一次动作；playMotion 内部已经吞错
           void avatar.playMotion(ev.name);
+          break;
+        case 'expression':
+          // 情绪边沿触发的面部表情（joy/anger/crying/...）；setExpression 内部吞错
+          void avatar.setExpression(ev.name);
           break;
         case 'placeholder_mouth':
           if (ev.action === 'start') {

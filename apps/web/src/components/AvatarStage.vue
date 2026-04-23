@@ -32,6 +32,7 @@ onMounted(async () => {
           speak: (url, opts) => st.speak(url, opts),
           stopSpeaking: () => st.stopSpeaking(),
           playMotion: (group, index, priority) => st.playMotion(group, index, priority),
+          setExpression: (name) => st.setExpression(name),
           startPlaceholderMouth: () => st.startPlaceholderMouth(),
           stopPlaceholderMouth: () => st.stopPlaceholderMouth(),
         });

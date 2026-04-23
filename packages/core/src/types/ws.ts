@@ -39,6 +39,7 @@ export type ServerEvent =
   | { type: 'state'; value: AgentState }
   | { type: 'subtitle'; text: string; is_final: boolean; emotion: Emotion }
   | { type: 'motion'; name: string }
+  | { type: 'expression'; name: string }
   | { type: 'audio'; url: string; segment_idx: number; sample_rate: number }
   | { type: 'audio_rms'; rms: number; t: number }
   | { type: 'viseme'; open_y: number; form: number }
