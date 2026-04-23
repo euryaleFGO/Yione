@@ -41,6 +41,7 @@ class Settings(BaseSettings):
     llm_model: str = Field(default="MiniMax-M2.5", alias="LLM_MODEL")
 
     # -- TTS --
+    tts_provider: str = Field(default="cosyvoice", alias="TTS_PROVIDER")
     tts_base_url: str = Field(default="http://192.168.251.56:5001", alias="TTS_BASE_URL")
     tts_default_spk_id: str = Field(default="", alias="TTS_DEFAULT_SPK_ID")
     tts_cache_dir: str = Field(default="backend/app/static/tts", alias="TTS_CACHE_DIR")
