@@ -16,6 +16,8 @@ export default defineConfig(({ mode }) => {
     },
     server: {
       port: 5173,
+      allowedHosts: ['webling.955id.com'],
+      hmr: false,
       proxy: {
         '/api': { target: apiBase, changeOrigin: true },
         '/ws/chat': { target: apiBase.replace(/^http/, 'ws'), ws: true, changeOrigin: true },

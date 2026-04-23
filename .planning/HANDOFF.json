@@ -1,0 +1,58 @@
+{
+  "version": "1.0",
+  "timestamp": "2026-04-23T09:00:56Z",
+  "phase": "all_complete",
+  "phase_name": "All planned phases completed",
+  "phase_dir": "",
+  "plan": 0,
+  "task": 0,
+  "total_tasks": 0,
+  "status": "completed",
+  "completed_tasks": [
+    {"id": 1, "name": "M3.6 TTS 占位嘴型", "status": "done", "commit": "c88a960"},
+    {"id": 2, "name": "M7 Character 模块 + MongoDB", "status": "done", "commit": "72197d6"},
+    {"id": 3, "name": "M8 Embed Script", "status": "done", "commit": "2ebda83"},
+    {"id": 4, "name": "M9 Web Component", "status": "done", "commit": "c31ec96"},
+    {"id": 5, "name": "M10 iframe postMessage", "status": "done", "commit": "aaf11a4"},
+    {"id": 6, "name": "M11 多 TTS Provider", "status": "done", "commit": "3d26df0"},
+    {"id": 7, "name": "M12 音色管理 UI", "status": "done", "commit": "d10f64f"},
+    {"id": 8, "name": "M13 历史记录 UI", "status": "done", "commit": "ec6d716"},
+    {"id": 9, "name": "M14 可观测 /metrics", "status": "done", "commit": "41f1c65"},
+    {"id": 10, "name": "M17 Speaker UI", "status": "done", "commit": "4f6556c"},
+    {"id": 11, "name": "M18 流式 ASR + FunASR 部署", "status": "done", "commit": "30ec6af"},
+    {"id": 12, "name": "M20 工具链打通", "status": "done", "commit": "009eae3"},
+    {"id": 13, "name": "M21 Prompt 管理", "status": "done", "commit": "5558b08"},
+    {"id": 14, "name": "M22 情感引擎", "status": "done", "commit": "252bd52"},
+    {"id": 15, "name": "M23 人格系统", "status": "done", "commit": "beccc2e"},
+    {"id": 16, "name": "M24 事件总线", "status": "done", "commit": "3f74807"},
+    {"id": 17, "name": "M25 自主循环", "status": "done", "commit": "2dd828e"},
+    {"id": 18, "name": "M26 RVC 歌声", "status": "done", "commit": "dd0f982"},
+    {"id": 19, "name": "M27 情绪-动作联动", "status": "done", "commit": "11bd0a6"},
+    {"id": 20, "name": "M28 技能插件", "status": "done", "commit": "5fd968b"},
+    {"id": 21, "name": "M29 卡拉OK", "status": "done", "commit": "004c0e4"},
+    {"id": 22, "name": "M30 互动小游戏", "status": "done", "commit": "3de3807"},
+    {"id": 23, "name": "M31 知识图谱", "status": "done", "commit": "b337311"},
+    {"id": 24, "name": "M32 Prompt 后台", "status": "done", "commit": "1503802"},
+    {"id": 25, "name": "M33 生产化", "status": "done", "commit": "5d29859"}
+  ],
+  "remaining_tasks": [
+    {"id": 26, "name": "M15 麦克风输入 (needs M18 done)", "status": "not_started"},
+    {"id": 27, "name": "M19 打断机制 (needs VAD)", "status": "not_started"}
+  ],
+  "blockers": [
+    {"description": "M19 打断机制需要 VAD (Voice Activity Detection) 实现", "type": "technical", "workaround": "无"}
+  ],
+  "human_actions_pending": [
+    {"action": "升级 GPU 驱动以支持 CUDA", "context": "FunASR 服务器 GPU 驱动版本 12080 太旧，PyTorch cu130 不兼容", "blocking": false}
+  ],
+  "decisions": [
+    {"decision": "使用 motor 异步驱动连接 MongoDB", "rationale": "轻量、与 FastAPI 风格一致", "phase": "M7"},
+    {"decision": "Character 全局共享，Tenant 白名单控制权限", "rationale": "多租户共享角色库", "phase": "M7"},
+    {"decision": "使用 FunASR 进行流式 ASR", "rationale": "开源、支持中文、可自行部署", "phase": "M18"},
+    {"decision": "语音输入降级到 Web Speech API", "rationale": "HTTP 下 MediaRecorder 无法访问麦克风", "phase": "M18"},
+    {"decision": "禁用 Vite HMR 通过反向代理", "rationale": "nginx 反代不支持 Vite HMR WebSocket", "phase": "M18"}
+  ],
+  "uncommitted_files": ["apps/web/nginx.conf", "apps/web/vite.config.ts"],
+  "next_action": "继续优化语音输入体验，或开始新的里程碑规划",
+  "context_notes": "本次会话完成了 25 个里程碑的实现，54 个 commit。FunASR 已部署在 192.168.251.56:10095（CPU 模式）。webLing 通过 nginx 反代访问 https://webling.955id.com:8443。"
+}
