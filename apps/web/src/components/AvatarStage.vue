@@ -11,21 +11,32 @@ const props = withDefaults(defineProps<{ config?: AvatarConfig }>(), {
   config: () => DEFAULT_AVATAR,
 });
 
+const emit = defineEmits<{
+  ready: [speak: (url: string) => Promise<void>];
+}>();
+
 const hostEl = ref<HTMLDivElement | null>(null);
 const status = ref<StageStatus>({ kind: 'idle' });
 let stage: Live2DStage | null = null;
 
 onMounted(async () => {
   if (!hostEl.value) return;
-  stage = new Live2DStage({ onStatusChange: (s) => (status.value = s) });
+  stage = new Live2DStage({
+    onStatusChange: (s) => {
+      status.value = s;
+      if (s.kind === 'ready' && stage) {
+        emit('ready', (url) => stage!.speak(url));
+      }
+    },
+  });
   await stage.mount(hostEl.value, props.config);
 });
 
 onBeforeUnmount(() => stage?.unmount());
 
 defineExpose({
-  pushRms: (rms: number) => stage?.pushRms(rms),
-  resetLipSync: () => stage?.resetLipSync(),
+  speak: (url: string) => stage?.speak(url) ?? Promise.resolve(),
+  stopSpeaking: () => stage?.stopSpeaking(),
 });
 </script>
 

@@ -12,7 +12,6 @@
 
 import { DEFAULT_AVATAR, type AvatarConfig } from './avatar-config.js';
 import { ensureCubismCore, isCubismCoreLoaded } from './cubism-core.js';
-import { createLipSync, createNoopLipSync, type LipSyncDriver } from './lipsync.js';
 
 type PixiModule = typeof import('pixi.js');
 type Live2DBindings = typeof import('pixi-live2d-display-lipsyncpatch/cubism4');
@@ -51,6 +50,11 @@ export interface StageCallbacks {
   onStatusChange?: (status: StageStatus) => void;
 }
 
+export interface SpeakOptions {
+  volume?: number;
+  crossOrigin?: string;
+}
+
 type Live2DInstance = {
   width: number;
   height: number;
@@ -63,6 +67,19 @@ type Live2DInstance = {
     originalWidth?: number;
     originalHeight?: number;
   };
+  /** lipsyncpatch fork: speaks audio + drives mouth sync internally. */
+  speak?: (
+    sound: string,
+    opts?: {
+      volume?: number;
+      crossOrigin?: string;
+      resetExpression?: boolean;
+      onFinish?: () => void;
+      onError?: (e: Error) => void;
+    },
+  ) => Promise<boolean>;
+  /** Stop current speak + lipsync. */
+  stopSpeaking?: () => void;
 };
 
 export class AvatarStage {
@@ -72,7 +89,6 @@ export class AvatarStage {
   private host: HTMLElement | null = null;
   private config: AvatarConfig = DEFAULT_AVATAR;
   private status: StageStatus = { kind: 'idle' };
-  private lipSync: LipSyncDriver = createNoopLipSync();
 
   constructor(private readonly cb: StageCallbacks = {}) {}
 
@@ -112,7 +128,6 @@ export class AvatarStage {
 
       app.stage.addChild(model as unknown as Parameters<typeof app.stage.addChild>[0]);
       this.fitModel();
-      this.lipSync = createLipSync(model as unknown as Parameters<typeof createLipSync>[0]);
 
       // Re-fit on container resize. `resizeTo` on PIXI polls via ticker and
       // can race with user events; we reposition ourselves against CSS pixels
@@ -130,20 +145,38 @@ export class AvatarStage {
     return this.status;
   }
 
-  /** Feed audio RMS to drive the mouth-open parameter. */
-  pushRms(rms: number): void {
-    this.lipSync.pushRms(rms);
+  /**
+   * Play a sound through the model and drive lipsync automatically.
+   *
+   * The lipsyncpatch fork handles the whole pipeline internally: it creates
+   * an <audio> / AnalyserNode, connects output to speakers, and writes
+   * ParamMouthOpenY each frame *after* motion updates so idle animations
+   * don't overwrite the mouth shape. Returns a Promise that resolves when
+   * playback finishes.
+   */
+  async speak(soundUrl: string, opts: SpeakOptions = {}): Promise<void> {
+    const model = this.model;
+    if (!model?.speak) return;
+    await new Promise<void>((resolve) => {
+      void model.speak!(soundUrl, {
+        volume: opts.volume ?? 1,
+        crossOrigin: opts.crossOrigin,
+        resetExpression: false,
+        onFinish: () => resolve(),
+        onError: () => resolve(),
+      });
+    });
   }
 
-  resetLipSync(): void {
-    this.lipSync.reset();
+  /** Abort any in-flight speak() and release its audio. */
+  stopSpeaking(): void {
+    this.model?.stopSpeaking?.();
   }
 
   unmount(): void {
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
-    this.lipSync.dispose();
-    this.lipSync = createNoopLipSync();
+    this.model?.stopSpeaking?.();
     this.model = null;
     this.host = null;
     const app = this.appAny as { destroy?: (a?: boolean, b?: unknown) => void } | null;

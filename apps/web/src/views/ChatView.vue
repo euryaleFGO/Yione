@@ -1,6 +1,7 @@
 <script setup lang="ts">
+import type { SpeakFn } from '@webling/core';
 import { storeToRefs } from 'pinia';
-import { onBeforeUnmount, onMounted, ref, watch } from 'vue';
+import { onBeforeUnmount, onMounted, ref } from 'vue';
 
 import AvatarStage from '@/components/AvatarStage.vue';
 import InputBar from '@/components/InputBar.vue';
@@ -8,10 +9,9 @@ import MessageList from '@/components/MessageList.vue';
 import { useChatStore } from '@/stores/chat';
 
 const chat = useChatStore();
-const { messages, agentState, connection, lastError, session, rms } = storeToRefs(chat);
+const { messages, agentState, connection, lastError, session } = storeToRefs(chat);
 const backendOk = ref<boolean | null>(null);
 const backendVersion = ref('');
-const avatarRef = ref<InstanceType<typeof AvatarStage> | null>(null);
 
 onMounted(async () => {
   try {
@@ -30,12 +30,13 @@ onMounted(async () => {
   }
 });
 
-// Forward RMS samples from the chat store's AudioQueue into the Live2D lipsync driver.
-watch(rms, (v) => avatarRef.value?.pushRms(v));
-
 onBeforeUnmount(() => {
   void chat.disconnect();
 });
+
+function onAvatarReady(speak: SpeakFn) {
+  chat.setSpeaker(speak);
+}
 
 async function onSend(text: string) {
   await chat.submit(text, connection.value === 'open' ? 'ws' : 'rest');
@@ -46,7 +47,7 @@ async function onSend(text: string) {
   <section class="h-[calc(100vh-60px)] flex flex-col lg:flex-row">
     <!-- Avatar panel -->
     <div class="flex-1 min-w-0 min-h-0 relative overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-200">
-      <AvatarStage ref="avatarRef" />
+      <AvatarStage @ready="onAvatarReady" />
       <div
         class="absolute top-2 left-2 z-10 text-xs bg-white/80 backdrop-blur rounded px-2 py-1 flex gap-2"
       >

@@ -1,4 +1,4 @@
-import { AudioQueue, type Message, type SessionSummary } from '@webling/core';
+import { AudioQueue, type Message, type SessionSummary, type SpeakFn } from '@webling/core';
 import { defineStore } from 'pinia';
 import { ref, shallowRef } from 'vue';
 
@@ -18,23 +18,27 @@ export const useChatStore = defineStore('chat', () => {
   const connection = ref<ConnectionState>('idle');
   const agentState = ref<AgentState>('idle');
   const lastError = ref<string | null>(null);
-  /** Per-frame RMS sample from the current TTS playback; 0 when silent. */
-  const rms = ref(0);
 
   let socket: ReturnType<typeof createChatSocket> | null = null;
   let streamingMessageId: string | null = null;
 
+  // Speaker function is set by the AvatarStage component once the Live2D model
+  // is ready. If the avatar isn't mounted (or Cubism Core is missing), audio
+  // events are silently dropped — chat UI still works.
+  let speakFn: SpeakFn = () => Promise.resolve();
+
   const audioQueue = new AudioQueue({
-    onRms: (v) => {
-      rms.value = v;
-    },
-    onActivityChange: (active) => {
-      if (!active) rms.value = 0;
+    speak: async (url) => {
+      await speakFn(url);
     },
     onError: (err) => {
       lastError.value = `audio: ${err.message}`;
     },
   });
+
+  function setSpeaker(fn: SpeakFn): void {
+    speakFn = fn;
+  }
 
   async function ensureSession(characterId = 'ling'): Promise<SessionSummary> {
     if (session.value) return session.value;
@@ -120,9 +124,6 @@ export const useChatStore = defineStore('chat', () => {
   async function sendViaWs(text: string): Promise<void> {
     await connectSocket();
     if (!socket) return;
-    // Kick the AudioContext alive from this user-gesture turn so the first
-    // `audio` event can start playing without the autoplay block.
-    void audioQueue.ensureContext();
     messages.value.push({
       id: uid('m'),
       role: 'user',
@@ -180,10 +181,10 @@ export const useChatStore = defineStore('chat', () => {
     connection,
     agentState,
     lastError,
-    rms,
     ensureSession,
     connectSocket,
     submit,
     disconnect,
+    setSpeaker,
   };
 });
