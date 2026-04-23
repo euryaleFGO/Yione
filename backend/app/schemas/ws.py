@@ -124,6 +124,14 @@ class PongEvent(_ServerBase):
     type: Literal["pong"] = "pong"
 
 
+PlaceholderAction = Literal["start", "stop"]
+
+
+class PlaceholderEvent(_ServerBase):
+    type: Literal["placeholder_mouth"] = "placeholder_mouth"
+    action: PlaceholderAction
+
+
 # M16：声纹识别命中时推给前端；is_new=True 表示自动注册出的新说话人
 class SpeakerDetectedEvent(_ServerBase):
     type: Literal["speaker_detected"] = "speaker_detected"
@@ -142,6 +150,7 @@ ServerEvent = (
     | VisemeEvent
     | ErrorEvent
     | PongEvent
+    | PlaceholderEvent
     | SpeakerDetectedEvent
 )
 
@@ -177,6 +186,8 @@ __all__ = [
     "ErrorEvent",
     "MotionEvent",
     "PingEvent",
+    "PlaceholderAction",
+    "PlaceholderEvent",
     "PongEvent",
     "ServerEvent",
     "SpeakerDetectedEvent",

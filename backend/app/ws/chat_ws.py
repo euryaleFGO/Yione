@@ -40,6 +40,7 @@ from app.schemas.ws import (
     Emotion,
     ErrorEvent,
     MotionEvent,
+    PlaceholderEvent,
     PongEvent,
     ServerEvent,
     StateEvent,
@@ -151,6 +152,7 @@ async def _tts_worker(
                         seg.url,
                     )
                     first = False
+                    await _send(ws, PlaceholderEvent(action="stop"))
                 await _send(
                     ws,
                     AudioEvent(
@@ -192,6 +194,7 @@ async def _handle_user_message(
     logger.info("[0.00s] user_message received: %r", user_text[:40])
 
     await _send(ws, StateEvent(value="processing"))
+    await _send(ws, PlaceholderEvent(action="start"))
 
     pending: asyncio.Queue[_PendingItem] = asyncio.Queue()
     state = _TurnState(t0=t0)
@@ -320,7 +323,7 @@ async def chat_ws(
     token: str | None = Query(default=None),
 ) -> None:
     sessions = get_session_service()
-    info = sessions.get(session_id)
+    info = await sessions.get(session_id)
     if info is None:
         await ws.close(code=4404, reason="session not found")
         return

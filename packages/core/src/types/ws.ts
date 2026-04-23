@@ -28,6 +28,13 @@ export type ClientEvent =
 
 export type AgentState = 'listening' | 'processing' | 'speaking' | 'idle';
 
+export type PlaceholderMouthAction = 'start' | 'stop';
+
+export interface PlaceholderMouthEvent {
+  type: 'placeholder_mouth';
+  action: PlaceholderMouthAction;
+}
+
 export type ServerEvent =
   | { type: 'state'; value: AgentState }
   | { type: 'subtitle'; text: string; is_final: boolean; emotion: Emotion }
@@ -37,6 +44,7 @@ export type ServerEvent =
   | { type: 'viseme'; open_y: number; form: number }
   | { type: 'error'; code: string; message: string }
   | { type: 'pong' }
+  | PlaceholderMouthEvent
   | {
       type: 'speaker_detected';
       speaker_id: string;

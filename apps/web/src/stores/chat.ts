@@ -1,5 +1,6 @@
 import { AudioQueue, type Message, type SessionSummary } from '@webling/core';
 import type { AvatarControls } from '@webling/live2d-kit';
+import type { AvatarConfig } from '@webling/live2d-kit';
 import { defineStore } from 'pinia';
 import { ref, shallowRef } from 'vue';
 
@@ -7,6 +8,16 @@ import { chatApi, createChatSocket } from '@/lib/webling-clients';
 
 type ConnectionState = 'idle' | 'connecting' | 'open' | 'closed' | 'error';
 type AgentState = 'idle' | 'processing' | 'speaking' | 'listening';
+
+export interface CharacterInfo {
+  id: string;
+  name: string;
+  avatar_config: AvatarConfig;
+  greeting: string;
+  system_prompt: string;
+  voice_id: string | null;
+  enabled: boolean;
+}
 
 function uid(prefix: string): string {
   return `${prefix}_${Math.random().toString(36).slice(2, 10)}`;
@@ -19,6 +30,8 @@ export const useChatStore = defineStore('chat', () => {
   const connection = ref<ConnectionState>('idle');
   const agentState = ref<AgentState>('idle');
   const lastError = ref<string | null>(null);
+  const characters = ref<CharacterInfo[]>([]);
+  const currentCharacter = shallowRef<CharacterInfo | null>(null);
 
   let socket: ReturnType<typeof createChatSocket> | null = null;
   let streamingMessageId: string | null = null;
@@ -29,6 +42,8 @@ export const useChatStore = defineStore('chat', () => {
     speak: () => Promise.resolve(),
     stopSpeaking: () => {},
     playMotion: () => Promise.resolve(),
+    startPlaceholderMouth: () => {},
+    stopPlaceholderMouth: () => {},
   };
   let avatar: AvatarControls = noop;
 
@@ -75,11 +90,15 @@ export const useChatStore = defineStore('chat', () => {
       switch (ev.type) {
         case 'state':
           agentState.value = ev.value;
+          if (ev.value === 'idle') {
+            avatar.stopPlaceholderMouth();
+          }
           break;
         case 'subtitle':
           upsertStreamingAssistantMessage(ev.text, ev.is_final, ev.emotion);
           break;
         case 'audio':
+          avatar.stopPlaceholderMouth();
           audioQueue.enqueue({
             url: ev.url,
             segmentIdx: ev.segment_idx,
@@ -90,6 +109,13 @@ export const useChatStore = defineStore('chat', () => {
           // 后端推 motion group 名（Hiyori: Tap@Body / Flick / ...），
           // 交给 Live2D 播一次动作；playMotion 内部已经吞错
           void avatar.playMotion(ev.name);
+          break;
+        case 'placeholder_mouth':
+          if (ev.action === 'start') {
+            avatar.startPlaceholderMouth();
+          } else {
+            avatar.stopPlaceholderMouth();
+          }
           break;
         case 'error':
           lastError.value = `${ev.code}: ${ev.message}`;
@@ -196,6 +222,30 @@ export const useChatStore = defineStore('chat', () => {
     await audioQueue.destroy();
   }
 
+  async function fetchCharacters(): Promise<void> {
+    try {
+      const resp = await fetch('/api/characters');
+      if (!resp.ok) return;
+      const data = await resp.json();
+      characters.value = data.characters ?? [];
+      if (characters.value.length > 0 && !currentCharacter.value) {
+        currentCharacter.value = characters.value[0];
+      }
+    } catch {
+      // 静默失败，UI 显示空列表
+    }
+  }
+
+  async function changeCharacter(characterId: string): Promise<void> {
+    const char = characters.value.find((c) => c.id === characterId);
+    if (!char) return;
+    currentCharacter.value = char;
+    // 如果已连接 WS，发送 change_character 事件
+    if (socket && connection.value === 'open') {
+      socket.send({ type: 'change_character', character_id: characterId });
+    }
+  }
+
   return {
     session,
     messages,
@@ -203,11 +253,15 @@ export const useChatStore = defineStore('chat', () => {
     connection,
     agentState,
     lastError,
+    characters,
+    currentCharacter,
     ensureSession,
     connectSocket,
     submit,
     interrupt,
     disconnect,
     setAvatarControls,
+    fetchCharacters,
+    changeCharacter,
   };
 });

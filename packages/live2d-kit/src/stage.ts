@@ -63,6 +63,8 @@ export interface AvatarControls {
   speak: (url: string, opts?: SpeakOptions) => Promise<void>;
   stopSpeaking: () => void;
   playMotion: (group: string, index?: number, priority?: number) => Promise<void>;
+  startPlaceholderMouth: () => void;
+  stopPlaceholderMouth: () => void;
 }
 
 type Live2DInstance = {
@@ -105,6 +107,7 @@ export class AvatarStage {
   private host: HTMLElement | null = null;
   private config: AvatarConfig = DEFAULT_AVATAR;
   private status: StageStatus = { kind: 'idle' };
+  private placeholderTicker: (() => void) | null = null;
 
   constructor(private readonly cb: StageCallbacks = {}) {}
 
@@ -224,6 +227,7 @@ export class AvatarStage {
 
   /** Abort any in-flight speak() and release its audio. */
   stopSpeaking(): void {
+    this.stopPlaceholderMouth();
     this.model?.stopSpeaking?.();
   }
 
@@ -244,9 +248,46 @@ export class AvatarStage {
     }
   }
 
+  startPlaceholderMouth(): void {
+    if (this.placeholderTicker) return;
+    const model = this.model;
+    if (!model?.internalModel) return;
+
+    const startTime = Date.now();
+    this.placeholderTicker = () => {
+      const elapsed = (Date.now() - startTime) / 1000;
+      const value = Math.sin(elapsed * 0.3 * Math.PI * 2) * 0.15;
+      const coreModel = (model.internalModel as { coreModel?: { getParameterIndex(id: string): number; setParameterValueById(id: string, v: number): void } } | undefined)?.coreModel;
+      if (coreModel) {
+        const paramIndex = coreModel.getParameterIndex('ParamMouthOpenY');
+        if (paramIndex >= 0) {
+          coreModel.setParameterValueById('ParamMouthOpenY', value);
+        }
+      }
+    };
+    const app = this.appAny as { ticker?: { add(fn: () => void): void } } | null;
+    app?.ticker?.add(this.placeholderTicker);
+  }
+
+  stopPlaceholderMouth(): void {
+    if (!this.placeholderTicker) return;
+    const app = this.appAny as { ticker?: { remove(fn: () => void): void } } | null;
+    app?.ticker?.remove(this.placeholderTicker);
+    this.placeholderTicker = null;
+    const model = this.model;
+    const coreModel = (model?.internalModel as { coreModel?: { getParameterIndex(id: string): number; setParameterValueById(id: string, v: number): void } } | undefined)?.coreModel;
+    if (coreModel) {
+      const paramIndex = coreModel.getParameterIndex('ParamMouthOpenY');
+      if (paramIndex >= 0) {
+        coreModel.setParameterValueById('ParamMouthOpenY', 0);
+      }
+    }
+  }
+
   unmount(): void {
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    this.stopPlaceholderMouth();
     this.model?.stopSpeaking?.();
     this.model = null;
     this.host = null;

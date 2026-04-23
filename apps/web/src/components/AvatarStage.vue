@@ -32,6 +32,8 @@ onMounted(async () => {
           speak: (url, opts) => st.speak(url, opts),
           stopSpeaking: () => st.stopSpeaking(),
           playMotion: (group, index, priority) => st.playMotion(group, index, priority),
+          startPlaceholderMouth: () => st.startPlaceholderMouth(),
+          stopPlaceholderMouth: () => st.stopPlaceholderMouth(),
         });
       }
     },
