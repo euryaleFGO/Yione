@@ -1,4 +1,5 @@
 <script setup lang="ts">
+import { encodePcmInt16ToWav } from '@webling/core';
 import { computed, onBeforeUnmount, ref, watch } from 'vue';
 
 type AgentState = 'idle' | 'processing' | 'speaking' | 'listening';
@@ -14,6 +15,8 @@ const props = withDefaults(
 const emit = defineEmits<{
   send: [text: string];
   'speech-start': [];
+  /** M35：每句 utterance 的 16k mono WAV，供上层丢给 /api/speakers/identify 做声纹识别 */
+  'identify-audio': [wav: Blob];
 }>();
 
 const text = ref('');
@@ -42,6 +45,14 @@ const SILENCE_TIMEOUT_MS = 5 * 60 * 1000;
 // tab 切后台 30s 自动退出
 let hiddenExitTimer: ReturnType<typeof setTimeout> | null = null;
 const HIDDEN_EXIT_MS = 30 * 1000;
+
+// M35 声纹识别：每轮 utterance 累积 PCM，到 asr_final 时打包 WAV 发给上层
+// 上限 30s 防止有人讲太长撑爆内存（16k*2B*30s = 960KB）
+let utterancePcm: Int16Array[] = [];
+let utteranceSamples = 0;
+const UTTERANCE_MAX_SAMPLES = 16000 * 30;
+// 识别也需要足够长的片段；太短（<1s）直接不发
+const UTTERANCE_MIN_SAMPLES = 16000;
 
 // 对话态展示：dialogMode=false → 'off'；否则按 agentState 分档
 const dialogPhase = computed<'off' | 'listening' | 'processing' | 'speaking'>(() => {
@@ -166,6 +177,11 @@ async function startDialog() {
         pcm[i] = s < 0 ? s * 0x8000 : s * 0x7fff;
       }
       ws.send(pcm.buffer);
+      // M35：攒当前 utterance 的 PCM，asr_final 到达时打包为 WAV 做声纹识别
+      if (utteranceSamples < UTTERANCE_MAX_SAMPLES) {
+        utterancePcm.push(pcm);
+        utteranceSamples += pcm.length;
+      }
     };
     source.connect(processor);
     processor.connect(audioContext.destination);
@@ -197,6 +213,7 @@ async function startDialog() {
       resetSilenceTimer();
       // 一句完成 → 提交并重置打断标记；同时清空 text 供下一句
       const sentence = (data.text as string | undefined)?.trim() ?? '';
+      let submitted = false;
       if (sentence) {
         const now = Date.now();
         const last = lastSubmittedSentence;
@@ -206,8 +223,24 @@ async function startDialog() {
           lastSubmittedSentence = { text: sentence, at: now };
           text.value = sentence;
           submit();
+          submitted = true;
         }
       }
+      // M35：取这段 utterance 的 PCM 做声纹识别；重复提交的去重份也不发识别
+      if (submitted && utteranceSamples >= UTTERANCE_MIN_SAMPLES) {
+        const merged = new Int16Array(utteranceSamples);
+        let offset = 0;
+        for (const chunk of utterancePcm) {
+          merged.set(chunk, offset);
+          offset += chunk.length;
+        }
+        try {
+          const wav = encodePcmInt16ToWav(merged, 16000);
+          emit('identify-audio', wav);
+        } catch { /* ignore */ }
+      }
+      utterancePcm = [];
+      utteranceSamples = 0;
       bargedInThisUtterance = false;
     } else if (data.type === 'asr_result') {
       // 旧 M18 兼容消息；M34 循环里忽略（已通过 asr_final 处理）
@@ -233,6 +266,8 @@ async function startDialog() {
 function stopDialog() {
   dialogMode.value = false;
   bargedInThisUtterance = false;
+  utterancePcm = [];
+  utteranceSamples = 0;
 
   if (silenceTimer) {
     clearTimeout(silenceTimer);

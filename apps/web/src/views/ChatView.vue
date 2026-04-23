@@ -57,6 +57,11 @@ function onInterrupt() {
 function onSpeechStart() {
   chat.sendSpeechStart();
 }
+
+// M35：每句 utterance 的 WAV → POST 给 /api/speakers/identify 做声纹识别
+function onIdentifyAudio(wav: Blob) {
+  void chat.identifySpeakerFromWav(wav);
+}
 </script>
 
 <template>
@@ -107,6 +112,7 @@ function onSpeechStart() {
         :agent-state="agentState"
         @send="onSend"
         @speech-start="onSpeechStart"
+        @identify-audio="onIdentifyAudio"
       />
     </div>
   </section>

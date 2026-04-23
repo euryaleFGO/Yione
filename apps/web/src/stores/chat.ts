@@ -32,6 +32,8 @@ export const useChatStore = defineStore('chat', () => {
   const lastError = ref<string | null>(null);
   const characters = ref<CharacterInfo[]>([]);
   const currentCharacter = shallowRef<CharacterInfo | null>(null);
+  // M35：最近一次声纹识别命中的说话人，提交下条 user_message 时贴到消息上
+  const lastSpeaker = shallowRef<{ id: string; name: string | null } | null>(null);
 
   let socket: ReturnType<typeof createChatSocket> | null = null;
   let streamingMessageId: string | null = null;
@@ -120,6 +122,19 @@ export const useChatStore = defineStore('chat', () => {
         case 'error':
           lastError.value = `${ev.code}: ${ev.message}`;
           break;
+        case 'speaker_detected': {
+          // 后端声纹命中 → 记下当前说话人，同时把最近一条 user 消息贴上
+          const spk = { id: ev.speaker_id, name: ev.name };
+          lastSpeaker.value = spk;
+          for (let i = messages.value.length - 1; i >= 0; i--) {
+            const m = messages.value[i];
+            if (m && m.role === 'user' && !m.speaker) {
+              m.speaker = spk;
+              break;
+            }
+          }
+          break;
+        }
         default:
           break;
       }
@@ -215,6 +230,23 @@ export const useChatStore = defineStore('chat', () => {
     streamingMessageId = null;
   }
 
+  /**
+   * M35：把一段 wav 音频喂给声纹 identify；命中时服务端会通过 WS 推回
+   * speaker_detected 事件，上面的 onMessage case 'speaker_detected' 会处理。
+   * 这里只管 fire-and-forget POST，不阻塞对话主流程。
+   */
+  async function identifySpeakerFromWav(wav: Blob): Promise<void> {
+    if (!session.value) return;
+    try {
+      const form = new FormData();
+      form.append('audio', wav, 'utterance.wav');
+      form.append('session_id', session.value.id);
+      await fetch('/api/speakers/identify', { method: 'POST', body: form });
+    } catch {
+      /* 声纹失败不影响对话；后端 fail-close 会返 503，静默吞掉 */
+    }
+  }
+
   /** M34：实时对话循环中检测到用户开口（ASR partial 到达），通知服务端 barge-in。 */
   function sendSpeechStart(): void {
     socket?.sendSpeechStart();
@@ -268,6 +300,8 @@ export const useChatStore = defineStore('chat', () => {
     submit,
     interrupt,
     sendSpeechStart,
+    identifySpeakerFromWav,
+    lastSpeaker,
     disconnect,
     setAvatarControls,
     fetchCharacters,

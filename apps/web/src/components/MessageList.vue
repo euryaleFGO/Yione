@@ -37,10 +37,16 @@ function assistantBubbleClass(m: Message): string {
       v-for="m in messages"
       :key="m.id"
       :class="[
-        'flex',
-        m.role === 'user' ? 'justify-end' : 'justify-start',
+        'flex flex-col',
+        m.role === 'user' ? 'items-end' : 'items-start',
       ]"
     >
+      <div
+        v-if="m.role === 'user' && m.speaker"
+        class="text-[10px] text-slate-500 mb-0.5 pr-1"
+      >
+        {{ m.speaker.name ?? m.speaker.id }}
+      </div>
       <div
         :class="[
           'max-w-[70%] px-3 py-2 rounded-xl whitespace-pre-wrap leading-relaxed text-sm shadow-sm',
