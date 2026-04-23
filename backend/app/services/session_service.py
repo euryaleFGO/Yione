@@ -37,6 +37,11 @@ class SessionService:
             return await self._repo.get(session_id)
         return self._fallback.get(session_id)
 
+    async def list_all(self) -> list[SessionInfo]:
+        if self._repo is not None:
+            return await self._repo.list_all()
+        return list(self._fallback.values())
+
 
 _singleton: SessionService | None = None
 

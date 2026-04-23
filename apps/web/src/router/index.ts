@@ -21,6 +21,11 @@ const routes: RouteRecordRaw[] = [
     name: 'voices',
     component: () => import('@/views/VoiceSettingsView.vue'),
   },
+  {
+    path: '/history',
+    name: 'history',
+    component: () => import('@/views/HistoryView.vue'),
+  },
 ];
 
 export const router = createRouter({

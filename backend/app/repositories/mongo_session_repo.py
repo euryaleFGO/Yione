@@ -37,3 +37,14 @@ class MongoSessionRepo:
             return None
         doc.pop("_id", None)
         return SessionInfo.model_validate(doc)
+
+    async def list_all(self) -> list[SessionInfo]:
+        if self._db is None:
+            return list(self._fallback.values())
+        cursor = self._db.sessions.find().sort("created_at", -1).limit(100)
+        docs = await cursor.to_list(length=100)
+        result = []
+        for doc in docs:
+            doc.pop("_id", None)
+            result.append(SessionInfo.model_validate(doc))
+        return result
