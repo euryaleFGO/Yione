@@ -14,6 +14,7 @@ const asrText = ref('');
 
 let mediaRecorder: MediaRecorder | null = null;
 let asrWs: WebSocket | null = null;
+let speechRecognition: any = null;
 
 function submit() {
   const trimmed = text.value.trim();
@@ -38,64 +39,82 @@ async function toggleVoice() {
 }
 
 async function startVoice() {
+  // 优先尝试 FunASR（需要 HTTPS 或 localhost）
   try {
     const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    await startFunASR(stream);
+    return;
+  } catch {
+    // 降级到 Web Speech API
+  }
 
-    // 连接 ASR WebSocket
-    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
-    asrWs = new WebSocket(`${proto}://${location.host}/ws/asr`);
+  // Web Speech API 降级
+  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    alert('语音输入需要：\n1. 使用 localhost 访问（推荐）\n2. 或使用 Chrome/Edge 浏览器');
+    return;
+  }
 
-    asrWs.onopen = () => {
-      // 发送配置
-      asrWs!.send(JSON.stringify({ sample_rate: 16000 }));
+  const recognition = new SpeechRecognition();
+  recognition.lang = 'zh-CN';
+  recognition.continuous = false;
+  recognition.interimResults = true;
 
-      // 开始录音
-      mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+  recognition.onresult = (event: any) => {
+    let final = '';
+    for (let i = 0; i < event.results.length; i++) {
+      if (event.results[i].isFinal) {
+        final += event.results[i][0].transcript;
+      } else {
+        text.value = event.results[i][0].transcript;
+      }
+    }
+    if (final) text.value = final;
+  };
 
-      mediaRecorder.ondataavailable = (e) => {
-        if (e.data.size > 0 && asrWs?.readyState === WebSocket.OPEN) {
-          e.data.arrayBuffer().then((buf) => {
-            asrWs!.send(buf);
-          });
-        }
-      };
+  recognition.onend = () => {
+    recording.value = false;
+    if (text.value.trim()) submit();
+  };
 
-      mediaRecorder.start(250); // 每 250ms 发送一次
-      recording.value = true;
-      asrText.value = '';
-    };
+  recognition.onerror = () => {
+    recording.value = false;
+  };
 
-    asrWs.onmessage = (ev) => {
-      const data = JSON.parse(ev.data);
-      if (data.type === 'asr_result') {
-        if (data.text) {
-          asrText.value = data.text;
-          text.value = data.text;
-        }
-        if (data.is_final) {
-          stopVoice();
-          // 自动发送
-          if (text.value.trim()) {
-            submit();
-          }
-        }
-      } else if (data.type === 'asr_error') {
-        console.error('ASR error:', data.message);
-        stopVoice();
+  recognition.start();
+  speechRecognition = recognition;
+  recording.value = true;
+}
+
+async function startFunASR(stream: MediaStream) {
+  const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+  asrWs = new WebSocket(`${proto}://${location.host}/ws/asr`);
+
+  asrWs.onopen = () => {
+    asrWs!.send(JSON.stringify({ sample_rate: 16000 }));
+    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+    mediaRecorder.ondataavailable = (e) => {
+      if (e.data.size > 0 && asrWs?.readyState === WebSocket.OPEN) {
+        e.data.arrayBuffer().then((buf) => asrWs!.send(buf));
       }
     };
+    mediaRecorder.start(250);
+    recording.value = true;
+    asrText.value = '';
+  };
 
-    asrWs.onerror = () => {
+  asrWs.onmessage = (ev) => {
+    const data = JSON.parse(ev.data);
+    if (data.type === 'asr_result') {
+      if (data.text) { asrText.value = data.text; text.value = data.text; }
+      if (data.is_final) { stopVoice(); if (text.value.trim()) submit(); }
+    } else if (data.type === 'asr_error') {
       stopVoice();
-    };
+    }
+  };
 
-    asrWs.onclose = () => {
-      if (recording.value) stopVoice();
-    };
-  } catch (err) {
-    console.error('Microphone access denied:', err);
-    alert('无法访问麦克风，请检查浏览器权限');
-  }
+  asrWs.onerror = () => stopVoice();
+  asrWs.onclose = () => { if (recording.value) stopVoice(); };
 }
 
 function stopVoice() {
@@ -111,6 +130,11 @@ function stopVoice() {
     asrWs.close();
   }
   asrWs = null;
+
+  if (speechRecognition) {
+    speechRecognition.abort();
+    speechRecognition = null;
+  }
 }
 
 onBeforeUnmount(() => {
