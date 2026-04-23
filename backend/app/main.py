@@ -10,7 +10,7 @@ from fastapi import FastAPI
 from fastapi.middleware.cors import CORSMiddleware
 from fastapi.staticfiles import StaticFiles
 
-from app.config import BACKEND_ROOT, get_settings
+from app.config import BACKEND_ROOT, PROJECT_ROOT, get_settings
 from app.db import close_db, init_db
 from app.integrations.ling_adapter import inject_ling_path
 from app.routers import characters, chat, embed, health, sessions, speakers, tts
@@ -74,6 +74,11 @@ def create_app() -> FastAPI:
     static_dir = BACKEND_ROOT / "app" / "static"
     static_dir.mkdir(parents=True, exist_ok=True)
     app.mount("/static", StaticFiles(directory=str(static_dir)), name="static")
+
+    # M8: 挂载 embed 构建产物（embed.js + embed.html）
+    embed_dir = PROJECT_ROOT / "apps" / "embed" / "dist"
+    if embed_dir.exists():
+        app.mount("/embed", StaticFiles(directory=str(embed_dir)), name="embed")
 
     app.include_router(health.router, prefix="/api")
     app.include_router(sessions.router, prefix="/api")

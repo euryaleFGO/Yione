@@ -1,0 +1,13 @@
+{
+  "name": "@webling/embed",
+  "version": "0.0.1",
+  "private": true,
+  "scripts": {
+    "build": "vite build",
+    "dev": "vite build --watch"
+  },
+  "devDependencies": {
+    "vite": "^6.0.0",
+    "typescript": "^5.0.0"
+  }
+}
