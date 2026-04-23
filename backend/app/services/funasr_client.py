@@ -27,52 +27,80 @@ class FunASRClient:
         audio_chunks: AsyncIterator[bytes],
         sample_rate: int = 16000,
     ) -> AsyncIterator[str]:
-        """流式识别：发送音频 chunks，返回识别文本。"""
+        """流式识别：官方 2pass 协议。
+
+        FunASR 2pass 会返回两种 mode 的结果：
+          - 2pass-online：流式中间稿，会被后续覆盖
+          - 2pass-offline：VAD 句尾离线纠错的句终稿，需要累加
+
+        这里把两者拼装成"committed + pending"并 yield，上层无需区分。
+        """
+        import json
+
         try:
             async with websockets.connect(self._ws_url) as ws:
-                # 发送配置
-                import json
                 config = {
-                    "mode": "online",
+                    "mode": "2pass",
                     "chunk_size": [5, 10, 5],
-                    "wav_name": "stream",
-                    "is_speaking": True,
+                    "chunk_interval": 10,
+                    "encoder_chunk_look_back": 4,
+                    "decoder_chunk_look_back": 0,
+                    "wav_name": "webling",
                     "wav_format": "pcm",
                     "audio_fs": sample_rate,
+                    "is_speaking": True,
+                    "hotwords": "",
+                    "itn": True,
                 }
                 await ws.send(json.dumps(config))
+                logger.debug("FunASR config sent: %s", config)
 
-                # 启动接收任务
-                results = asyncio.Queue()
+                results: asyncio.Queue[str | None] = asyncio.Queue()
+                state = {"committed": "", "pending": ""}
 
-                async def receiver():
+                async def receiver() -> None:
                     try:
                         async for msg in ws:
-                            import json as j
-                            data = j.loads(msg)
-                            if "text" in data and data["text"]:
-                                await results.put(data["text"])
-                    except Exception:
-                        pass
+                            data = json.loads(msg)
+                            text = data.get("text", "")
+                            if not text:
+                                continue
+                            mode = data.get("mode", "")
+                            if mode == "2pass-online":
+                                state["pending"] = text
+                            elif mode == "2pass-offline":
+                                state["committed"] += text
+                                state["pending"] = ""
+                            else:
+                                # 兜底：其他 mode 当作整段覆盖
+                                state["committed"] = text
+                                state["pending"] = ""
+                            await results.put(state["committed"] + state["pending"])
+                    except Exception as exc:
+                        logger.debug("FunASR receiver 结束：%s", exc)
                     await results.put(None)
 
+                async def sender() -> None:
+                    try:
+                        async for chunk in audio_chunks:
+                            await ws.send(chunk)
+                        # 音频流结束后通知 FunASR flush 最终结果
+                        await ws.send(json.dumps({"is_speaking": False}))
+                    except Exception as exc:
+                        logger.debug("FunASR sender 结束：%s", exc)
+
                 recv_task = asyncio.create_task(receiver())
+                send_task = asyncio.create_task(sender())
 
-                # 发送音频
-                async for chunk in audio_chunks:
-                    await ws.send(chunk)
-
-                # 结束
-                await ws.send(json.dumps({"is_speaking": False}))
-
-                # 读取结果
-                while True:
-                    text = await results.get()
-                    if text is None:
-                        break
-                    yield text
-
-                recv_task.cancel()
+                try:
+                    while True:
+                        text = await results.get()
+                        if text is None:
+                            break
+                        yield text
+                finally:
+                    send_task.cancel()
+                    recv_task.cancel()
 
         except Exception as exc:
             logger.error("FunASR 连接失败: %s", exc)

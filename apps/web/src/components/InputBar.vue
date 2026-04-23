@@ -133,50 +133,74 @@ async function startFunASR(stream: MediaStream) {
         text.value = data.text;
       }
       if (data.is_final) {
-        stopVoice();
+        // 最终结果已到，关 WS + submit（不再走 stopVoice，音频资源已在点停止时释放）
+        if (asrWs?.readyState === WebSocket.OPEN) {
+          asrWs.close();
+        }
+        asrWs = null;
         if (text.value.trim()) submit();
       }
     } else if (data.type === 'asr_error') {
       console.error('ASR error:', data.message);
-      stopVoice();
+      stopVoice(true);
     }
   };
 
-  asrWs.onerror = () => stopVoice();
-  asrWs.onclose = () => { if (recording.value) stopVoice(); };
+  asrWs.onerror = () => stopVoice(true);
+  asrWs.onclose = () => { if (recording.value) stopVoice(true); };
 }
 
-function stopVoice() {
+/**
+ * 停止录音。
+ * @param immediate true 表示立即关闭 WS（出错/onclose 场景）；
+ *                  false（默认，用户点停止）则优雅收尾：发 EOF 等后端 is_final 再关。
+ */
+function stopVoice(immediate = false) {
   recording.value = false;
 
+  // 立即释放音频采集资源
   if (workletNode) {
     workletNode.disconnect();
     workletNode = null;
   }
-
   if (audioContext) {
     audioContext.close();
     audioContext = null;
   }
-
   if (mediaStream) {
     mediaStream.getTracks().forEach(t => t.stop());
     mediaStream = null;
   }
-
-  if (asrWs?.readyState === WebSocket.OPEN) {
-    asrWs.close();
-  }
-  asrWs = null;
-
   if (speechRecognition) {
     speechRecognition.abort();
     speechRecognition = null;
   }
+
+  // FunASR 分支：优雅收尾
+  if (asrWs?.readyState === WebSocket.OPEN) {
+    if (immediate) {
+      asrWs.close();
+      asrWs = null;
+    } else {
+      // 告诉后端音频结束，等 is_final 到达再由 onmessage 关 WS + submit
+      try { asrWs.send(JSON.stringify({ eof: true })); } catch { /* 忽略 */ }
+      // 3s 超时兜底：FunASR 迟迟不回最终结果就强制关并用已有文本
+      const pendingWs = asrWs;
+      setTimeout(() => {
+        if (pendingWs.readyState === WebSocket.OPEN) {
+          pendingWs.close();
+          if (asrWs === pendingWs) asrWs = null;
+          if (text.value.trim()) submit();
+        }
+      }, 3000);
+    }
+  } else if (asrWs) {
+    asrWs = null;
+  }
 }
 
 onBeforeUnmount(() => {
-  stopVoice();
+  stopVoice(true);
 });
 </script>
 
