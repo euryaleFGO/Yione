@@ -38,10 +38,12 @@ async function onSend(text: string) {
 
 <template>
   <section class="h-[calc(100vh-60px)] flex flex-col lg:flex-row">
-    <!-- Avatar panel -->
-    <div class="lg:flex-1 h-72 lg:h-auto border-r border-slate-200 relative">
+    <!-- Avatar panel: takes most of the screen, model is centered and clipped -->
+    <div class="flex-1 min-w-0 min-h-0 relative overflow-hidden border-b lg:border-b-0 lg:border-r border-slate-200">
       <AvatarStage />
-      <div class="absolute top-2 left-2 text-xs bg-white/80 backdrop-blur rounded px-2 py-1 flex gap-2">
+      <div
+        class="absolute top-2 left-2 z-10 text-xs bg-white/80 backdrop-blur rounded px-2 py-1 flex gap-2"
+      >
         <span>
           后端：
           <span v-if="backendOk === null">…</span>
@@ -55,11 +57,13 @@ async function onSend(text: string) {
       </div>
     </div>
 
-    <!-- Chat panel -->
-    <div class="flex-1 min-w-0 flex flex-col bg-white">
+    <!-- Chat panel: fixed narrower width on desktop so the avatar dominates -->
+    <div
+      class="shrink-0 flex flex-col bg-white w-full lg:w-[380px] h-[55vh] lg:h-auto"
+    >
       <div class="px-4 py-2 text-xs text-slate-500 border-b border-slate-100 flex gap-2">
         <span>会话：{{ session?.id ?? '未建立' }}</span>
-        <span v-if="lastError" class="text-rose-600">· {{ lastError }}</span>
+        <span v-if="lastError" class="text-rose-600 truncate">· {{ lastError }}</span>
       </div>
       <MessageList :messages="messages" class="flex-1 min-h-0" />
       <InputBar :disabled="connection === 'error'" @send="onSend" />
