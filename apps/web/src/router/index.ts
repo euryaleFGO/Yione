@@ -16,6 +16,11 @@ const routes: RouteRecordRaw[] = [
     name: 'characters',
     component: () => import('@/views/CharacterPickerView.vue'),
   },
+  {
+    path: '/voices',
+    name: 'voices',
+    component: () => import('@/views/VoiceSettingsView.vue'),
+  },
 ];
 
 export const router = createRouter({
