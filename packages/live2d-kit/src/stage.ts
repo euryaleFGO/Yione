@@ -215,9 +215,25 @@ export class AvatarStage {
    * playback finishes.
    */
   private activeSpeakResolver: (() => void) | null = null;
+  // 记住当前应用的表情，每次 speak/motion 内部都把它当参数带回去——fork 的 idle
+  // motion picker 默认会把 expression 抹掉，只能在我们主动调 speak/motion 时硬把
+  // 它"重新设上"
+  private currentExpressionName: string | null = null;
 
   async speak(soundUrl: string, opts: SpeakOptions = {}): Promise<void> {
-    const model = this.model;
+    const model = this.model as {
+      speak?: (
+        url: string,
+        opts: {
+          volume?: number;
+          crossOrigin?: string;
+          expression?: string | number;
+          resetExpression?: boolean;
+          onFinish?: () => void;
+          onError?: () => void;
+        },
+      ) => Promise<unknown>;
+    } | null;
     if (!model?.speak) return;
     await new Promise<void>((resolve) => {
       const settle = () => {
@@ -225,13 +241,25 @@ export class AvatarStage {
         resolve();
       };
       this.activeSpeakResolver = settle;
-      void model.speak!(soundUrl, {
+      const speakOpts: {
+        volume?: number;
+        crossOrigin?: string;
+        expression?: string;
+        resetExpression?: boolean;
+        onFinish?: () => void;
+        onError?: () => void;
+      } = {
         volume: opts.volume ?? 1,
         crossOrigin: opts.crossOrigin,
         resetExpression: false,
         onFinish: settle,
         onError: settle,
-      });
+      };
+      if (this.currentExpressionName !== null) {
+        // 每段 TTS 播前主动把 expression 设上，抵消段间 idle motion 的抹除
+        speakOpts.expression = this.currentExpressionName;
+      }
+      void model.speak!(soundUrl, speakOpts);
     });
   }
 
@@ -257,15 +285,18 @@ export class AvatarStage {
         g: string,
         i?: number,
         p?: number,
-        opts?: { resetExpression?: boolean },
+        opts?: { resetExpression?: boolean; expression?: string | number },
       ) => Promise<boolean>;
     } | null;
     if (!model?.motion) return;
     try {
       // resetExpression: false —— fork 默认为 true，motion 播起来会把当前 expression
-      // 抹成 neutral。我们希望情绪切换发的 motion（Tap@Body / Flick / ...）与
-      // 同时设置的表情共存；后续 idle 动作也不要擦表情。
-      await model.motion(group, index, priority, { resetExpression: false });
+      // 抹成 neutral。expression 显式带上，被 fork 的 idle motion 抹除后能立刻恢复。
+      const opts: { resetExpression: boolean; expression?: string } = {
+        resetExpression: false,
+      };
+      if (this.currentExpressionName !== null) opts.expression = this.currentExpressionName;
+      await model.motion(group, index, priority, opts);
     } catch (err) {
       // motion 失败不应该冒泡打断主流程；只在控制台留痕
       // eslint-disable-next-line no-console
@@ -280,6 +311,8 @@ export class AvatarStage {
    */
   async setExpression(name: string): Promise<void> {
     const model = this.model as { expression?: (id?: string | number) => Promise<boolean> } | null;
+    // 记住当前表情名（无论 apply 是否成功），供后续 speak/motion 把它当参数带回去
+    this.currentExpressionName = name;
     if (!model?.expression) return;
     try {
       await model.expression(name);
