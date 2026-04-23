@@ -26,6 +26,11 @@ const routes: RouteRecordRaw[] = [
     name: 'history',
     component: () => import('@/views/HistoryView.vue'),
   },
+  {
+    path: '/speakers',
+    name: 'speakers',
+    component: () => import('@/views/SpeakerView.vue'),
+  },
 ];
 
 export const router = createRouter({
