@@ -25,6 +25,20 @@ HIYORI_MOTION_MAP: dict[Emotion, str] = {
     "affection": "Tap@Body",
 }
 
+# 情绪 → expression 名（Hiyori `expressions/*.exp3.json`）
+# 与 motion 是独立系统：motion 是身体动作（.motion3.json），expression 是面部参数
+# 覆盖（.exp3.json）。两者可同时作用在模型上互不干扰。
+HIYORI_EXPRESSION_MAP: dict[Emotion, str] = {
+    "neutral": "neutral",
+    "joy": "joy",
+    "sadness": "sadness",
+    "anger": "anger",
+    "fear": "fear",
+    "surprise": "surprise",
+    "disgust": "disgust",
+    "affection": "affection",
+}
+
 
 def motion_for(emotion: Emotion, character_id: str = "ling") -> str:
     """返回指定情绪对应的 motion group 名。
@@ -35,4 +49,15 @@ def motion_for(emotion: Emotion, character_id: str = "ling") -> str:
     return HIYORI_MOTION_MAP.get(emotion, "Idle")
 
 
-__all__ = ["HIYORI_MOTION_MAP", "motion_for"]
+def expression_for(emotion: Emotion, character_id: str = "ling") -> str:
+    """情绪 → expression 名；对齐 model3.json 里 Expressions 的 Name 字段。"""
+    del character_id  # 预留 M7
+    return HIYORI_EXPRESSION_MAP.get(emotion, "neutral")
+
+
+__all__ = [
+    "HIYORI_EXPRESSION_MAP",
+    "HIYORI_MOTION_MAP",
+    "expression_for",
+    "motion_for",
+]

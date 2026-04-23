@@ -39,6 +39,7 @@ from app.schemas.ws import (
     AudioEvent,
     Emotion,
     ErrorEvent,
+    ExpressionEvent,
     MotionEvent,
     PlaceholderEvent,
     PongEvent,
@@ -50,7 +51,7 @@ from app.schemas.ws import (
 from app.services import emotion_service
 from app.services.agent_service import get_agent_service
 from app.services.auth_service import AuthError
-from app.services.motion_map import motion_for
+from app.services.motion_map import expression_for, motion_for
 from app.services.session_service import get_session_service
 from app.services.tts_service import TTSError, get_tts_service
 from app.ws.connections import get_ws_registry
@@ -172,15 +173,25 @@ async def _maybe_emit_motion(
     emotion: Emotion,
     character_id: str,
 ) -> None:
-    """若情绪变了且非 neutral，就发一次 MotionEvent 驱动 Live2D 做动作。"""
-    if emotion == "neutral":
-        return
+    """情绪切换时一次性发 motion（身体动作）+ expression（面部表情）。
+
+    边沿触发：只在 emotion 与上一次不同时触发；避免每句字幕都打断当前动作 / 表情。
+    neutral 不触发 motion（idle motion 本身在循环）但依然发 expression 让面部回
+    到中性，避免停留在前一个表情上。
+    """
     if emotion == state.last_motion_emotion:
         return
-    motion = motion_for(emotion, character_id=character_id)
-    await _send(ws, MotionEvent(name=motion))
+    # 面部表情：neutral 也要发（回到中性脸），非 neutral 走映射
+    expression = expression_for(emotion, character_id=character_id)
+    await _send(ws, ExpressionEvent(name=expression))
+    # 身体动作：neutral 不触发（让 idle 循环接手）
+    if emotion != "neutral":
+        motion = motion_for(emotion, character_id=character_id)
+        await _send(ws, MotionEvent(name=motion))
+        logger.info("motion %s + expression %s triggered by emotion=%s", motion, expression, emotion)
+    else:
+        logger.info("expression %s triggered by emotion=neutral (no motion)", expression)
     state.last_motion_emotion = emotion
-    logger.info("motion %s triggered by emotion=%s", motion, emotion)
 
 
 async def _handle_user_message(

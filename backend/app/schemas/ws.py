@@ -95,6 +95,12 @@ class MotionEvent(_ServerBase):
     name: str
 
 
+# M5 后续：情绪驱动 Live2D expression（面部表情，和 motion 是独立系统）
+class ExpressionEvent(_ServerBase):
+    type: Literal["expression"] = "expression"
+    name: str
+
+
 class AudioEvent(_ServerBase):
     type: Literal["audio"] = "audio"
     url: str
@@ -145,6 +151,7 @@ ServerEvent = (
     StateEvent
     | SubtitleEvent
     | MotionEvent
+    | ExpressionEvent
     | AudioEvent
     | AudioRmsEvent
     | VisemeEvent
@@ -184,6 +191,7 @@ __all__ = [
     "ClientEvent",
     "Emotion",
     "ErrorEvent",
+    "ExpressionEvent",
     "MotionEvent",
     "PingEvent",
     "PlaceholderAction",
