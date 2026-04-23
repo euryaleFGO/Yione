@@ -12,6 +12,7 @@ import { RouterLink, RouterView } from 'vue-router';
         <RouterLink to="/voices" class="px-3 py-1.5 rounded hover:bg-slate-100" active-class="bg-indigo-50 text-indigo-600">音色</RouterLink>
         <RouterLink to="/speakers" class="px-3 py-1.5 rounded hover:bg-slate-100" active-class="bg-indigo-50 text-indigo-600">说话人</RouterLink>
         <RouterLink to="/history" class="px-3 py-1.5 rounded hover:bg-slate-100" active-class="bg-indigo-50 text-indigo-600">历史</RouterLink>
+        <RouterLink to="/knowledge" class="px-3 py-1.5 rounded hover:bg-slate-100" active-class="bg-indigo-50 text-indigo-600">图谱</RouterLink>
         <a href="/docs" target="_blank" class="px-3 py-1.5 rounded hover:bg-slate-100">API</a>
       </nav>
     </header>

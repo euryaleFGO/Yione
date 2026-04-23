@@ -31,6 +31,11 @@ const routes: RouteRecordRaw[] = [
     name: 'speakers',
     component: () => import('@/views/SpeakerView.vue'),
   },
+  {
+    path: '/knowledge',
+    name: 'knowledge',
+    component: () => import('@/views/KnowledgeGraph.vue'),
+  },
 ];
 
 export const router = createRouter({
