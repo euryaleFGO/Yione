@@ -1,0 +1,8 @@
+models/
+__pycache__/
+*.pyc
+*.pyo
+*.bak.*
+.env
+.env.*
+!.env.example

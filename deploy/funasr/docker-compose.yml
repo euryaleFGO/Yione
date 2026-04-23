@@ -1,0 +1,23 @@
+# FunASR 流式 ASR 服务（官方 2pass runtime）
+#
+# 使用：
+#   docker compose up -d          # 启动（首次会下载 ~1.7GB ONNX 模型到 models/）
+#   docker compose logs -f        # 看启动日志，等 "asr model init finished. listen on port:10095"
+#   docker compose down           # 停止
+#
+# 环境变量（见同目录 .env.example）：
+#   FUNASR_PORT          宿主机映射端口（默认 10095）
+#   FUNASR_MODELS_DIR    模型缓存目录，首次会下载到这里（默认 ./models）
+
+services:
+  funasr:
+    image: registry.cn-hangzhou.aliyuncs.com/funasr_repo/funasr:funasr-runtime-sdk-online-cpu-0.1.12
+    container_name: webling-funasr
+    ports:
+      - "${FUNASR_PORT:-10095}:10095"
+    volumes:
+      - ${FUNASR_MODELS_DIR:-./models}:/workspace/models
+      - ./entrypoint.sh:/usr/local/bin/entrypoint.sh:ro
+    entrypoint: ["/usr/local/bin/entrypoint.sh"]
+    restart: unless-stopped
+    privileged: true

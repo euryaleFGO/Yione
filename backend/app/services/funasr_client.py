@@ -11,16 +11,16 @@ from collections.abc import AsyncIterator
 
 import websockets
 
-logger = logging.getLogger(__name__)
+from app.config import get_settings
 
-FUNASR_WS_URL = "ws://192.168.251.56:10095"
+logger = logging.getLogger(__name__)
 
 
 class FunASRClient:
     """FunASR WebSocket 客户端。"""
 
     def __init__(self, ws_url: str | None = None) -> None:
-        self._ws_url = ws_url or FUNASR_WS_URL
+        self._ws_url = ws_url or get_settings().funasr_ws_url
 
     async def recognize_stream(
         self,

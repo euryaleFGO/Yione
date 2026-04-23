@@ -1,0 +1,32 @@
+# webLing CosyVoice2 TTS 服务
+#
+# 使用：
+#   cp .env.example .env
+#   # 把 CosyVoice2-0.5B 模型放到 ${TTS_MODELS_DIR}/CosyVoice2-0.5B/
+#   docker compose build
+#   docker compose up -d
+#   docker compose logs -f    # 首次加载模型 30s+
+#
+# 环境变量（见同目录 .env.example）：
+#   TTS_PORT          宿主机映射端口（默认 5001）
+#   TTS_MODELS_DIR    模型目录，需放 CosyVoice2-0.5B（默认 ./models）
+
+services:
+  tts:
+    build:
+      context: .
+    image: webling-tts:latest
+    container_name: webling-tts
+    ports:
+      - "${TTS_PORT:-5001}:5001"
+    volumes:
+      - ${TTS_MODELS_DIR:-./models}:/workspace/models
+    restart: unless-stopped
+    # GPU 支持（需要宿主机装好 nvidia-container-toolkit）
+    deploy:
+      resources:
+        reservations:
+          devices:
+            - driver: nvidia
+              count: all
+              capabilities: [gpu]

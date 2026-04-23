@@ -47,6 +47,9 @@ class Settings(BaseSettings):
     tts_cache_dir: str = Field(default="backend/app/static/tts", alias="TTS_CACHE_DIR")
     tts_cache_ttl_seconds: int = Field(default=3600, alias="TTS_CACHE_TTL_SECONDS")
 
+    # -- ASR (FunASR) --
+    funasr_ws_url: str = Field(default="ws://192.168.251.56:10095", alias="FUNASR_WS_URL")
+
     # -- Mongo --
     mongo_uri: str = Field(default="mongodb://localhost:27017", alias="MONGO_URI")
     mongo_db: str = Field(default="webling", alias="MONGO_DB")

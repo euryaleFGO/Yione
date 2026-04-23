@@ -45,3 +45,7 @@ backend/app/data/tenants.json
 
 # M16：声纹库包含生物特征向量，不入库
 backend/app/data/speakers.json
+
+# 部署：各层模型缓存目录（FunASR ~1.7GB、CosyVoice2-0.5B ~5.3GB）
+deploy/funasr/models/
+deploy/tts/models/
