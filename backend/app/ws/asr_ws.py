@@ -1,6 +1,15 @@
-"""ASR WebSocket 端点（M18）。
+"""ASR WebSocket 端点（M18 + M34 实时对话循环）。
 
-接收前端音频流，转发给 FunASR，返回识别文本。
+接收前端音频流，转发给 FunASR，返回识别事件。
+
+M34 协议变化：
+  - 不再"一条 is_final 就关连接"，而是保持 WS 存活直到前端主动关闭或断开
+  - 每条 FunASR 2pass-online 中间稿 → emit ``asr_partial``
+  - 每条 FunASR 2pass-offline 句终稿 → emit ``asr_final``
+  - 前端可以收到任意多对 partial/final 事件，直到它关 WS
+
+向后兼容：为了不破坏已有 M18 前端逻辑，后端在每次 ``asr_final`` 之后额外
+emit 一条带 ``is_final=true`` 的老式 ``asr_result``，前端可自行取舍。
 """
 
 from __future__ import annotations
@@ -8,6 +17,7 @@ from __future__ import annotations
 import asyncio
 import json
 import logging
+from collections.abc import AsyncIterator
 
 from fastapi import APIRouter, WebSocket, WebSocketDisconnect
 
@@ -18,7 +28,7 @@ logger = logging.getLogger(__name__)
 router = APIRouter()
 
 
-async def _safe_send_json(ws: WebSocket, payload: dict) -> bool:
+async def _safe_send_json(ws: WebSocket, payload: dict[str, object]) -> bool:
     """向 WebSocket 发 JSON，连接已关闭时返回 False 不抛异常。"""
     try:
         await ws.send_json(payload)
@@ -30,13 +40,17 @@ async def _safe_send_json(ws: WebSocket, payload: dict) -> bool:
 
 @router.websocket("/ws/asr")
 async def asr_ws(ws: WebSocket) -> None:
-    """ASR WebSocket：接收音频流，返回识别文本。
+    """ASR WebSocket：接收音频流，返回识别事件。
 
     协议：
-      - 首条 text frame：{"sample_rate": 16000}
+      - 首条 text frame：``{"sample_rate": 16000}``
       - 之后 binary frame：PCM 16-bit 音频 chunk
-      - 音频结束：发送 text frame {"eof": true}，后端 flush FunASR 并回传最终文本
-      - 回传 text frame：{"type": "asr_result", "text": "...", "is_final": bool}
+      - 前端主动结束：发 text frame ``{"eof": true}`` 或直接 close
+      - 回传事件（text frame）：
+          * ``{"type": "asr_partial", "text": "...", "committed": "..."}``
+          * ``{"type": "asr_final", "text": "...", "committed": "..."}``
+          * ``{"type": "asr_result", "text": "...", "is_final": true}``（兼容旧版）
+          * ``{"type": "asr_error", "message": "..."}``
     """
     await ws.accept()
     logger.info("ASR WebSocket connected")
@@ -48,11 +62,11 @@ async def asr_ws(ws: WebSocket) -> None:
         sample_rate = config.get("sample_rate", 16000)
         logger.debug("ASR config: %s", config)
 
-        # 创建音频队列
+        # 音频队列
         audio_queue: asyncio.Queue[bytes | None] = asyncio.Queue()
 
-        # 启动接收任务：同时处理音频 bytes 和控制 text（eof）
-        async def receiver():
+        async def receiver() -> None:
+            """同时处理音频 bytes 和控制 text（eof / disconnect）。"""
             try:
                 while True:
                     message = await ws.receive()
@@ -76,33 +90,46 @@ async def asr_ws(ws: WebSocket) -> None:
 
         recv_task = asyncio.create_task(receiver())
 
-        # 转发给 FunASR
         client = get_funasr_client()
 
-        async def audio_iter():
+        async def audio_iter() -> AsyncIterator[bytes]:
             while True:
                 chunk = await audio_queue.get()
                 if chunk is None:
                     break
                 yield chunk
 
-        last_text = ""
         try:
-            async for text in client.recognize_stream(audio_iter(), sample_rate=sample_rate):
-                last_text = text
-                ok = await _safe_send_json(
-                    ws, {"type": "asr_result", "text": text, "is_final": False}
-                )
+            async for evt in client.recognize_stream(audio_iter(), sample_rate=sample_rate):
+                mode = evt["mode"]
+                if mode == "partial":
+                    ok = await _safe_send_json(ws, {
+                        "type": "asr_partial",
+                        "text": evt["text"],
+                        "committed": evt["committed"],
+                    })
+                elif mode == "final":
+                    # 新格式：句终稿独立事件
+                    ok = await _safe_send_json(ws, {
+                        "type": "asr_final",
+                        "text": evt["text"],
+                        "committed": evt["committed"],
+                    })
+                    # 旧格式兼容：给没迁移的前端继续喂 asr_result
+                    if ok:
+                        ok = await _safe_send_json(ws, {
+                            "type": "asr_result",
+                            "text": evt["committed"],
+                            "is_final": True,
+                        })
+                else:
+                    ok = True
                 if not ok:
                     break
         except Exception as exc:
             logger.error("FunASR error: %s", exc)
             await _safe_send_json(ws, {"type": "asr_error", "message": str(exc)})
 
-        # 发送最终结果（带最后一次识别文本，供前端提交对话）
-        await _safe_send_json(
-            ws, {"type": "asr_result", "text": last_text, "is_final": True}
-        )
         recv_task.cancel()
 
     except WebSocketDisconnect:
