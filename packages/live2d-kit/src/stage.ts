@@ -147,6 +147,10 @@ export class AvatarStage {
       this.model = model;
       model.anchor?.set(0.5, 0.5);
 
+      // 推出 expressions/ 目录的 URL：config.modelUrl 是 xxx/hiyori/model3.json，
+      // 同目录下有 expressions/ 子目录
+      this.expressionBaseUrl = config.modelUrl.replace(/[^/]+$/, '');
+
       app.stage.addChild(model as unknown as Parameters<typeof app.stage.addChild>[0]);
       this.fitModel();
 
@@ -215,13 +219,15 @@ export class AvatarStage {
    * playback finishes.
    */
   private activeSpeakResolver: (() => void) | null = null;
-  // 记住当前应用的表情，每次 speak/motion 内部都把它当参数带回去——fork 的 idle
-  // motion picker 默认会把 expression 抹掉，只能在我们主动调 speak/motion 时硬把
-  // 它"重新设上"
-  private currentExpressionName: string | null = null;
-  // 表情兜底 ticker：idle motion 可能在 speak 之间的空隙抹掉表情，固定每 400ms
-  // 把 currentExpressionName 再 apply 一次，视觉上能把抹除的时间窗压到不可感知
-  private expressionTicker: ReturnType<typeof setInterval> | null = null;
+  // 当前表情：为了彻底绕开 fork 的 ExpressionManager 跟 idle motion 的拉锯，
+  // 每帧直接往 coreModel 写面部参数。PIXI ticker 在 motion update 之后跑，
+  // 写入的值会覆盖 idle motion 的 reset。
+  private currentExpressionParams: { id: string; value: number }[] = [];
+  private expressionTicker: (() => void) | null = null;
+  // 表情文件缓存：避免每次切换都重新 fetch exp3.json
+  private expressionCache: Map<string, { id: string; value: number }[]> = new Map();
+  // exp3.json 的相对基础路径（与 model3.json 同级，expressions/ 子目录）
+  private expressionBaseUrl: string | null = null;
 
   async speak(soundUrl: string, opts: SpeakOptions = {}): Promise<void> {
     const model = this.model as {
@@ -230,45 +236,29 @@ export class AvatarStage {
         opts: {
           volume?: number;
           crossOrigin?: string;
-          expression?: string | number;
           resetExpression?: boolean;
           onFinish?: () => void;
           onError?: () => void;
         },
       ) => Promise<unknown>;
-      expression?: (id?: string | number) => Promise<boolean>;
     } | null;
     if (!model?.speak) return;
-    // 段间兜底：idle motion 在 pixi ticker 上可能已经把表情抹成 neutral，这里在
-    // 每段 TTS 开播前显式再应用一次当前记住的表情，确保视觉上整句都持有
-    if (this.currentExpressionName !== null && model.expression) {
-      try { await model.expression(this.currentExpressionName); } catch { /* ignore */ }
-    }
     await new Promise<void>((resolve) => {
       const settle = () => {
         if (this.activeSpeakResolver === settle) this.activeSpeakResolver = null;
         resolve();
       };
       this.activeSpeakResolver = settle;
-      const speakOpts: {
-        volume?: number;
-        crossOrigin?: string;
-        expression?: string;
-        resetExpression?: boolean;
-        onFinish?: () => void;
-        onError?: () => void;
-      } = {
+      // 不传 expression/不由 fork 的 ExpressionManager 驱动表情；我们走
+      // expressionTicker 每帧直接写参数。resetExpression: false 只是防 fork
+      // 在 speak 前后触发 ExpressionManager 的 reset transition。
+      void model.speak!(soundUrl, {
         volume: opts.volume ?? 1,
         crossOrigin: opts.crossOrigin,
         resetExpression: false,
         onFinish: settle,
         onError: settle,
-      };
-      if (this.currentExpressionName !== null) {
-        // 双保险：option 里也带上
-        speakOpts.expression = this.currentExpressionName;
-      }
-      void model.speak!(soundUrl, speakOpts);
+      });
     });
   }
 
@@ -294,18 +284,14 @@ export class AvatarStage {
         g: string,
         i?: number,
         p?: number,
-        opts?: { resetExpression?: boolean; expression?: string | number },
+        opts?: { resetExpression?: boolean },
       ) => Promise<boolean>;
     } | null;
     if (!model?.motion) return;
     try {
-      // resetExpression: false —— fork 默认为 true，motion 播起来会把当前 expression
-      // 抹成 neutral。expression 显式带上，被 fork 的 idle motion 抹除后能立刻恢复。
-      const opts: { resetExpression: boolean; expression?: string } = {
-        resetExpression: false,
-      };
-      if (this.currentExpressionName !== null) opts.expression = this.currentExpressionName;
-      await model.motion(group, index, priority, opts);
+      // resetExpression: false —— 防 fork 在 motion 过渡期触发 ExpressionManager
+      // 的 fade 动画。真正的面部表情已经由 expressionTicker 每帧直接写参数驱动。
+      await model.motion(group, index, priority, { resetExpression: false });
     } catch (err) {
       // motion 失败不应该冒泡打断主流程；只在控制台留痕
       // eslint-disable-next-line no-console
@@ -319,27 +305,51 @@ export class AvatarStage {
    * 这里统一 swallow 错误 —— 表情挂掉不应该打断对话主流程。
    */
   async setExpression(name: string): Promise<void> {
-    const model = this.model as { expression?: (id?: string | number) => Promise<boolean> } | null;
-    // 记住当前表情名（无论 apply 是否成功），供后续 speak/motion 把它当参数带回去
-    this.currentExpressionName = name;
-    // 启动兜底 ticker（若尚未启动）：每 400ms 再 apply 一次，确保 idle motion
-    // 抹除后马上就恢复
-    if (!this.expressionTicker) {
-      this.expressionTicker = setInterval(() => {
-        const m = this.model as { expression?: (id?: string | number) => Promise<boolean> } | null;
-        const n = this.currentExpressionName;
-        if (!m?.expression || !n) return;
-        // fork 的 expression() 内部对"相同表情再次 apply"开销很小；失败静默吞
-        m.expression(n).catch(() => { /* ignore */ });
-      }, 400);
+    // 加载 .exp3.json（缓存命中就复用）；失败则清空 params 走空操作
+    if (!this.expressionCache.has(name) && this.expressionBaseUrl) {
+      try {
+        const res = await fetch(`${this.expressionBaseUrl}expressions/${name}.exp3.json`);
+        if (res.ok) {
+          const data = await res.json();
+          const parsed: { id: string; value: number }[] = [];
+          for (const p of data.Parameters ?? []) {
+            if (typeof p.Id === 'string' && typeof p.Value === 'number') {
+              parsed.push({ id: p.Id, value: p.Value });
+            }
+          }
+          this.expressionCache.set(name, parsed);
+        }
+      } catch (err) {
+        // eslint-disable-next-line no-console
+        console.warn('[live2d] load expression failed', name, err);
+      }
     }
-    if (!model?.expression) return;
-    try {
-      await model.expression(name);
-    } catch (err) {
-      // eslint-disable-next-line no-console
-      console.warn('[live2d] expression failed', name, err);
-    }
+    this.currentExpressionParams = this.expressionCache.get(name) ?? [];
+    this.ensureExpressionTicker();
+  }
+
+  /** 装一个 PIXI ticker 回调，每帧把当前表情的参数直接写到 coreModel；
+   *  依赖 PIXI ticker 在 motion update 之后跑——这样写入的值会覆盖 idle motion
+   *  的还原，idle 永远碰不到这几个面部参数。 */
+  private ensureExpressionTicker(): void {
+    if (this.expressionTicker) return;
+    this.expressionTicker = () => {
+      const model = this.model;
+      const coreModel = (
+        model?.internalModel as
+          | { coreModel?: { setParameterValueById(id: string, v: number): void } }
+          | undefined
+      )?.coreModel;
+      if (!coreModel) return;
+      for (const { id, value } of this.currentExpressionParams) {
+        // 所有 exp3.json 的 Blend 都当 Overwrite 处理（我们的 9 个内置表情大多
+        // 就是 Overwrite；个别 Add 的 MouthOpenY 让 lipsync 路径去管理）
+        if (id === 'ParamMouthOpenY') continue; // 留给 lipsync 驱动
+        coreModel.setParameterValueById(id, value);
+      }
+    };
+    const app = this.appAny as { ticker?: { add(fn: () => void): void } } | null;
+    app?.ticker?.add(this.expressionTicker);
   }
 
   startPlaceholderMouth(): void {
@@ -384,10 +394,13 @@ export class AvatarStage {
     this.stopPlaceholderMouth();
     this.model?.stopSpeaking?.();
     if (this.expressionTicker) {
-      clearInterval(this.expressionTicker);
+      const app = this.appAny as { ticker?: { remove(fn: () => void): void } } | null;
+      app?.ticker?.remove(this.expressionTicker);
       this.expressionTicker = null;
     }
-    this.currentExpressionName = null;
+    this.currentExpressionParams = [];
+    this.expressionCache.clear();
+    this.expressionBaseUrl = null;
     this.model = null;
     this.host = null;
     const app = this.appAny as { destroy?: (a?: boolean, b?: unknown) => void } | null;
