@@ -139,14 +139,19 @@
           if (data.value === 'idle') setStatus('已连接');
           else if (data.value === 'processing') setStatus('思考中...');
           else if (data.value === 'speaking') setStatus('说话中...');
+          // 通知父页面状态变化
+          window.parent.postMessage({ type: 'webling_state', state: data.value }, '*');
           break;
         case 'subtitle':
           if (data.is_final) {
             addMessage(data.text, 'assistant');
+            // 通知父页面新消息
+            window.parent.postMessage({ type: 'webling_message', role: 'assistant', text: data.text }, '*');
           }
           break;
         case 'error':
           addMessage('错误: ' + data.message, 'system');
+          window.parent.postMessage({ type: 'webling_error', message: data.message }, '*');
           break;
       }
     };
@@ -168,6 +173,33 @@
 
   sendEl.onclick = send;
   inputEl.onkeydown = (e) => { if (e.key === 'Enter') send(); };
+
+  // M10: postMessage API — 父页面可控制 iframe
+  window.addEventListener('message', (ev) => {
+    const msg = ev.data;
+    if (!msg || typeof msg.type !== 'string') return;
+
+    switch (msg.type) {
+      case 'sendMessage':
+        // 父页面发送消息
+        if (msg.text && ws && ws.readyState === WebSocket.OPEN) {
+          addMessage(msg.text, 'user');
+          ws.send(JSON.stringify({ type: 'user_message', text: msg.text }));
+        }
+        break;
+      case 'close':
+        // 父页面请求关闭（通过隐藏 iframe）
+        window.parent.postMessage({ type: 'webling_closed' }, '*');
+        break;
+      case 'getState':
+        // 父页面查询状态
+        window.parent.postMessage({ type: 'webling_state', status: statusEl.textContent }, '*');
+        break;
+    }
+  });
+
+  // 通知父页面已加载完成
+  window.parent.postMessage({ type: 'webling_ready' }, '*');
 
   // 初始化
   (async () => {
