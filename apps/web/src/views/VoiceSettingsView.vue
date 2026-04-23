@@ -1,10 +1,6 @@
 <script setup lang="ts">
 import { onMounted, ref } from 'vue';
 
-import { useChatStore } from '@/stores/chat';
-
-const chat = useChatStore();
-
 interface Voice {
   id: string;
   name: string;

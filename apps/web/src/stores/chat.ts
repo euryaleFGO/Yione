@@ -215,6 +215,14 @@ export const useChatStore = defineStore('chat', () => {
     streamingMessageId = null;
   }
 
+  /** M34：实时对话循环中检测到用户开口（ASR partial 到达），通知服务端 barge-in。 */
+  function sendSpeechStart(): void {
+    socket?.sendSpeechStart();
+    audioQueue.clear();
+    avatar.stopSpeaking();
+    streamingMessageId = null;
+  }
+
   async function disconnect(): Promise<void> {
     socket?.close();
     socket = null;
@@ -259,6 +267,7 @@ export const useChatStore = defineStore('chat', () => {
     connectSocket,
     submit,
     interrupt,
+    sendSpeechStart,
     disconnect,
     setAvatarControls,
     fetchCharacters,

@@ -52,6 +52,11 @@ async function onSend(text: string) {
 function onInterrupt() {
   chat.interrupt();
 }
+
+// M34：对话循环中前端检测到用户开口，通知服务端打断
+function onSpeechStart() {
+  chat.sendSpeechStart();
+}
 </script>
 
 <template>
@@ -97,7 +102,12 @@ function onInterrupt() {
         <span v-if="lastError" class="text-rose-600 truncate">· {{ lastError }}</span>
       </div>
       <MessageList :messages="messages" class="flex-1 min-h-0" />
-      <InputBar :disabled="connection === 'error'" @send="onSend" />
+      <InputBar
+        :disabled="connection === 'error'"
+        :agent-state="agentState"
+        @send="onSend"
+        @speech-start="onSpeechStart"
+      />
     </div>
   </section>
 </template>
