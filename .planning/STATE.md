@@ -1,3 +1,17 @@
+---
+gsd_state_version: 1.0
+milestone: v1.0
+milestone_name: milestone
+status: unknown
+last_updated: "2026-04-23T05:13:10.358Z"
+progress:
+  total_phases: 27
+  completed_phases: 0
+  total_plans: 1
+  completed_plans: 0
+  percent: 0
+---
+
 # 状态：webLing
 
 **最后更新：** 2026-04-23
@@ -12,6 +26,7 @@
 ## 当前阶段
 
 **阶段 1：M3.6 TTS 占位音**
+
 - 状态：待开始
 - 目标：感知首字延迟减半
 - 需求：M3.6
@@ -47,3 +62,5 @@
 
 ---
 *状态初始化：2026-04-23*
+
+**Planned Phase:** 1 (M3.6 TTS 占位音) — 1 plans — 2026-04-23T05:13:10.355Z

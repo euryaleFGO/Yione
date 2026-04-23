@@ -53,10 +53,13 @@ class SpeakerService:
     def __init__(
         self,
         adapter: SVAdapter | None = None,
-        repo: JsonFileSpeakerRepo | None = None,
+        repo=None,
     ) -> None:
         self._adapter = adapter or get_sv_adapter()
-        self._repo = repo or get_speaker_repo()
+        if repo is not None:
+            self._repo = repo
+        else:
+            self._repo = get_speaker_repo()
 
     # ---- 对外动词 ----
 

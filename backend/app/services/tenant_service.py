@@ -64,11 +64,13 @@ def _hash_key(api_key: str) -> str:
 
 
 class TenantService:
-    def __init__(self, path: Path | None = None) -> None:
+    def __init__(self, path: Path | None = None, mongo_repo=None) -> None:
         self._path = path or DEFAULT_TENANTS_PATH
         self._tenants: dict[str, Tenant] = {}
         self._dev_fallback = False
-        self._load()
+        self._mongo_repo = mongo_repo
+        if mongo_repo is None:
+            self._load()
 
     def _load(self) -> None:
         if not self._path.exists():
@@ -108,6 +110,8 @@ class TenantService:
 
         dev fallback 模式下永远返回一个内置 demo tenant，方便本地联调。
         """
+        if self._mongo_repo is not None:
+            return self._mongo_repo.verify_api_key(api_key)
         if not api_key:
             return None
         if self._dev_fallback:

@@ -1,4 +1,4 @@
-"""Session management (M1 minimal — in-memory)."""
+"""Session management (M1 内存 → M7 MongoDB)."""
 
 from __future__ import annotations
 
@@ -15,7 +15,7 @@ async def create_session(
     body: SessionCreate,
     svc: SessionService = Depends(get_session_service),
 ) -> SessionInfo:
-    return svc.create(character_id=body.character_id, user_ref=body.user_ref)
+    return await svc.create(character_id=body.character_id, user_ref=body.user_ref)
 
 
 @router.get("/{session_id}", response_model=SessionInfo)
@@ -23,7 +23,7 @@ async def get_session(
     session_id: str,
     svc: SessionService = Depends(get_session_service),
 ) -> SessionInfo:
-    info = svc.get(session_id)
+    info = await svc.get(session_id)
     if info is None:
         raise HTTPException(status_code=404, detail="session not found")
     return info

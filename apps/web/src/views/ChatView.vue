@@ -2,6 +2,7 @@
 import type { AvatarControls } from '@webling/live2d-kit';
 import { storeToRefs } from 'pinia';
 import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
+import { useRouter } from 'vue-router';
 
 import AvatarStage from '@/components/AvatarStage.vue';
 import InputBar from '@/components/InputBar.vue';
@@ -9,7 +10,8 @@ import MessageList from '@/components/MessageList.vue';
 import { useChatStore } from '@/stores/chat';
 
 const chat = useChatStore();
-const { messages, agentState, connection, lastError, session } = storeToRefs(chat);
+const router = useRouter();
+const { messages, agentState, connection, lastError, session, currentCharacter } = storeToRefs(chat);
 const backendOk = ref<boolean | null>(null);
 const backendVersion = ref('');
 
@@ -87,8 +89,11 @@ function onInterrupt() {
     <div
       class="shrink-0 flex flex-col bg-white w-full lg:w-[380px] h-[55vh] lg:h-auto"
     >
-      <div class="px-4 py-2 text-xs text-slate-500 border-b border-slate-100 flex gap-2">
+      <div class="px-4 py-2 text-xs text-slate-500 border-b border-slate-100 flex gap-2 items-center">
         <span>会话：{{ session?.id ?? '未建立' }}</span>
+        <span v-if="currentCharacter" class="cursor-pointer hover:text-indigo-600" @click="router.push('/characters')">
+          · {{ currentCharacter.name }}
+        </span>
         <span v-if="lastError" class="text-rose-600 truncate">· {{ lastError }}</span>
       </div>
       <MessageList :messages="messages" class="flex-1 min-h-0" />
