@@ -109,10 +109,22 @@ async function startDialog() {
   // iOS/移动端 autoplay unlock：在用户点"开始对话"的 gesture 上下文里
   // 播一条静音，把整页的 Audio 子系统标记为 unlocked，后续 Live2D fork 创建
   // 新 HTMLAudioElement 播 TTS 才不会被 Safari 的自动播放策略静默屏蔽。
+  // 注意：不能 await —— iOS Safari 某些版本返回的 play() Promise 永不 settle，
+  // 会把整个 startDialog 卡死。fire-and-forget 即可，unlock 是同步副作用。
   try {
     const warmup = new Audio(SILENT_WAV_DATAURL);
     warmup.muted = true;
-    await warmup.play().catch(() => { /* 桌面浏览器会忽略静音 play；不影响 */ });
+    const p = warmup.play();
+    if (p && typeof p.catch === 'function') p.catch(() => { /* ignore */ });
+  } catch { /* ignore */ }
+  // 顺便尝试 resume AudioContext（Chrome/Firefox 走这条更标准）
+  try {
+    const Ctx = (window as any).AudioContext || (window as any).webkitAudioContext;
+    if (Ctx) {
+      const probeCtx = new Ctx();
+      if (probeCtx.state === 'suspended') void probeCtx.resume().catch(() => {});
+      // 保留 ctx 引用在闭包里；让浏览器自己 GC，不显式 close 避免短时间内再次挂起
+    }
   } catch { /* ignore */ }
 
   let stream: MediaStream;
