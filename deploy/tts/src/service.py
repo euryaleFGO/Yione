@@ -108,6 +108,13 @@ def _job_worker(job_id: str, text: str, use_clone: bool, spk_id: str | None):
     """后台任务：按段生成并把 WAV bytes 入队。"""
     try:
         _ensure_tts_ready()
+        # 懒加载 forced aligner；没装 / 加载失败时 aligner.align 返回空 list，
+        # 客户端会降级到纯音量驱动嘴型，不影响主链路
+        try:
+            from engine.aligner import get_aligner
+            aligner = get_aligner()
+        except Exception as _exc:
+            aligner = None
         segments = tts_engine.split_text_by_punctuation(text)
         if not segments:
             raise RuntimeError("没有有效可合成文本")
@@ -123,11 +130,22 @@ def _job_worker(job_id: str, text: str, use_clone: bool, spk_id: str | None):
                 continue
             audio_data, sr = result
             wav_bytes = tts_engine.audio_to_wav_bytes(audio_data, sr)
+            # 字符级 viseme timeline（wav2vec2 CTC forced alignment）
+            timeline: list = []
+            if aligner is not None:
+                try:
+                    items = aligner.align(wav_bytes, seg)
+                    timeline = [it.to_dict() for it in items]
+                except Exception:
+                    timeline = []
             with _jobs_lock:
                 job = _jobs.get(job_id)
             if not job:
                 return
-            job["q"].put({"idx": idx, "sr": sr, "wav": wav_bytes}, block=True)
+            job["q"].put(
+                {"idx": idx, "sr": sr, "wav": wav_bytes, "timeline": timeline, "text": seg},
+                block=True,
+            )
 
         # 结束哨兵
         with _jobs_lock:
@@ -218,6 +236,21 @@ def tts_dequeue():
     wav_bytes = item["wav"]
     sr = item["sr"]
     idx = item["idx"]
+    timeline = item.get("timeline") or []
+    seg_text = item.get("text") or ""
+
+    # 可选 JSON 模式：客户端传 ?with_timeline=1 就返回 base64 wav + viseme timeline。
+    # 默认仍返 wav bytes 保持对旧客户端（Ling 桌面版等）的兼容。
+    if request.args.get("with_timeline", "").strip() in ("1", "true"):
+        import base64
+        return jsonify({
+            "segment_idx": idx,
+            "sample_rate": sr,
+            "text": seg_text,
+            "wav_b64": base64.b64encode(wav_bytes).decode("ascii"),
+            "timeline": timeline,
+        })
+
     from flask import Response
     resp = Response(wav_bytes, mimetype="audio/wav")
     resp.headers["X-Job-Id"] = job_id
