@@ -50,7 +50,18 @@
 					"File": "motion/hiyori_m08.motion3.json"
 				}
 			]
-		}
+		},
+		"Expressions": [
+			{ "Name": "neutral",   "File": "expressions/neutral.exp3.json" },
+			{ "Name": "joy",       "File": "expressions/joy.exp3.json" },
+			{ "Name": "anger",     "File": "expressions/anger.exp3.json" },
+			{ "Name": "sadness",   "File": "expressions/sadness.exp3.json" },
+			{ "Name": "crying",    "File": "expressions/crying.exp3.json" },
+			{ "Name": "fear",      "File": "expressions/fear.exp3.json" },
+			{ "Name": "surprise",  "File": "expressions/surprise.exp3.json" },
+			{ "Name": "disgust",   "File": "expressions/disgust.exp3.json" },
+			{ "Name": "affection", "File": "expressions/affection.exp3.json" }
+		]
 	},
 	"Groups": [
 		{
