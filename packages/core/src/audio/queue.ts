@@ -10,7 +10,17 @@
  * order if the backend pipelines multiple synth jobs).
  */
 
-export type SpeakFn = (soundUrl: string) => Promise<void> | void;
+export interface VisemeTimelineItem {
+  char: string;
+  t_start: number;
+  t_end: number;
+  viseme: string;
+}
+
+export type SpeakFn = (
+  soundUrl: string,
+  opts?: { timeline?: VisemeTimelineItem[] },
+) => Promise<void> | void;
 
 export interface AudioQueueOptions {
   /** Consumer that actually plays the audio and drives lipsync. */
@@ -25,6 +35,8 @@ export interface QueuedSegment {
   url: string;
   segmentIdx: number;
   sampleRate: number;
+  /** M36 wav2vec2 forced alignment 产出的字符级嘴型时间轴（可选） */
+  timeline?: VisemeTimelineItem[];
 }
 
 export class AudioQueue {
@@ -90,7 +102,7 @@ export class AudioQueue {
     this.playing = true;
     this.setActive(true);
     try {
-      await this.opts.speak(next.url);
+      await this.opts.speak(next.url, { timeline: next.timeline });
     } catch (err) {
       this.opts.onError?.(err instanceof Error ? err : new Error(String(err)), {
         url: next.url,

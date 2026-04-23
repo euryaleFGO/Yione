@@ -38,6 +38,32 @@ export const useChatStore = defineStore('chat', () => {
   let socket: ReturnType<typeof createChatSocket> | null = null;
   let streamingMessageId: string | null = null;
 
+  // M36 嘴型时间轴配对：backend 对同一段 TTS 先发 AudioEvent 再发 VisemeTimelineEvent；
+  // 两个事件都按 segment_idx 索引。先到的那个先塞进 map，第二个到了就配对 enqueue。
+  // 50ms 没等到 timeline 就降级，光凭 url enqueue（viseme ticker 没数据时等价纯音量）。
+  const pendingAudio = new Map<number, { url: string; sampleRate: number }>();
+  const pendingTimelines = new Map<
+    number,
+    { char: string; t_start: number; t_end: number; viseme: string }[]
+  >();
+  const audioFlushTimers = new Map<number, ReturnType<typeof setTimeout>>();
+
+  function enqueueSegment(
+    segmentIdx: number,
+    url: string,
+    sampleRate: number,
+    timeline?: { char: string; t_start: number; t_end: number; viseme: string }[],
+  ): void {
+    const t = audioFlushTimers.get(segmentIdx);
+    if (t) {
+      clearTimeout(t);
+      audioFlushTimers.delete(segmentIdx);
+    }
+    pendingAudio.delete(segmentIdx);
+    pendingTimelines.delete(segmentIdx);
+    audioQueue.enqueue({ url, segmentIdx, sampleRate, timeline });
+  }
+
   // 一组由 AvatarStage 在模型 ready 时注入的控制器。若头像没挂出来（比如缺 Cubism
   // Core），所有调用都静默降级，聊天 UI 仍可用。
   const noop: AvatarControls = {
@@ -51,8 +77,8 @@ export const useChatStore = defineStore('chat', () => {
   let avatar: AvatarControls = noop;
 
   const audioQueue = new AudioQueue({
-    speak: async (url) => {
-      await avatar.speak(url);
+    speak: async (url, opts) => {
+      await avatar.speak(url, { timeline: opts?.timeline });
     },
     onError: (err) => {
       lastError.value = `audio: ${err.message}`;
@@ -100,14 +126,36 @@ export const useChatStore = defineStore('chat', () => {
         case 'subtitle':
           upsertStreamingAssistantMessage(ev.text, ev.is_final, ev.emotion);
           break;
-        case 'audio':
+        case 'audio': {
           avatar.stopPlaceholderMouth();
-          audioQueue.enqueue({
-            url: ev.url,
-            segmentIdx: ev.segment_idx,
-            sampleRate: ev.sample_rate,
-          });
+          const existing = pendingTimelines.get(ev.segment_idx);
+          if (existing) {
+            enqueueSegment(ev.segment_idx, ev.url, ev.sample_rate, existing);
+          } else {
+            pendingAudio.set(ev.segment_idx, {
+              url: ev.url,
+              sampleRate: ev.sample_rate,
+            });
+            // 50ms 没等到 timeline 就降级 enqueue，不阻塞播放
+            const flushTimer = setTimeout(() => {
+              const buffered = pendingAudio.get(ev.segment_idx);
+              if (buffered) {
+                enqueueSegment(ev.segment_idx, buffered.url, buffered.sampleRate);
+              }
+            }, 50);
+            audioFlushTimers.set(ev.segment_idx, flushTimer);
+          }
           break;
+        }
+        case 'viseme_timeline': {
+          const audio = pendingAudio.get(ev.segment_idx);
+          if (audio) {
+            enqueueSegment(ev.segment_idx, audio.url, audio.sampleRate, ev.timeline);
+          } else {
+            pendingTimelines.set(ev.segment_idx, ev.timeline);
+          }
+          break;
+        }
         case 'motion':
           // 后端推 motion group 名（Hiyori: Tap@Body / Flick / ...），
           // 交给 Live2D 播一次动作；playMotion 内部已经吞错

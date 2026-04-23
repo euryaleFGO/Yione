@@ -41,6 +41,11 @@ export type ServerEvent =
   | { type: 'motion'; name: string }
   | { type: 'expression'; name: string }
   | { type: 'audio'; url: string; segment_idx: number; sample_rate: number }
+  | {
+      type: 'viseme_timeline';
+      segment_idx: number;
+      timeline: { char: string; t_start: number; t_end: number; viseme: string }[];
+    }
   | { type: 'audio_rms'; rms: number; t: number }
   | { type: 'viseme'; open_y: number; form: number }
   | { type: 'error'; code: string; message: string }

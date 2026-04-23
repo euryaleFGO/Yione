@@ -50,9 +50,18 @@ export interface StageCallbacks {
   onStatusChange?: (status: StageStatus) => void;
 }
 
+export interface VisemeTimelineItem {
+  char: string;
+  t_start: number;
+  t_end: number;
+  viseme: string;
+}
+
 export interface SpeakOptions {
   volume?: number;
   crossOrigin?: string;
+  /** M36 字符级嘴型时间轴（wav2vec2 forced alignment 产出） */
+  timeline?: VisemeTimelineItem[];
 }
 
 /**
@@ -228,6 +237,9 @@ export class AvatarStage {
   private expressionCache: Map<string, { id: string; value: number }[]> = new Map();
   // exp3.json 的相对基础路径（与 model3.json 同级，expressions/ 子目录）
   private expressionBaseUrl: string | null = null;
+  // M36 viseme ticker：speak() 播期间按 audio.currentTime 驱动 ParamMouthForm；
+  // OpenY 仍由 fork 的 amplitude lipsync 管，保留张合幅度跟音量同步
+  private activeVisemeTicker: (() => void) | null = null;
 
   async speak(soundUrl: string, opts: SpeakOptions = {}): Promise<void> {
     const model = this.model as {
@@ -243,9 +255,13 @@ export class AvatarStage {
       ) => Promise<unknown>;
     } | null;
     if (!model?.speak) return;
+    if (opts.timeline && opts.timeline.length > 0) {
+      this.installVisemeTicker(opts.timeline);
+    }
     await new Promise<void>((resolve) => {
       const settle = () => {
         if (this.activeSpeakResolver === settle) this.activeSpeakResolver = null;
+        this.removeVisemeTicker();
         resolve();
       };
       this.activeSpeakResolver = settle;
@@ -262,9 +278,62 @@ export class AvatarStage {
     });
   }
 
+  /** viseme → MouthForm delta（叠加在 expression 的 MouthForm 基础上）。
+   *  A/O/U/I/E 粗粒度 5 种 + rest；数值做过温和调整，避免嘴形太夸张。 */
+  private static VISEME_FORM_DELTA: Record<string, number> = {
+    A: 0.0,   // 大张口：form 不变（open 幅度由 lipsync 管）
+    O: -0.4,  // 圆唇
+    U: -0.7,  // 撮口
+    I: 0.5,   // 扁嘴
+    E: 0.2,   // 半开
+    rest: 0.0,
+  };
+
+  private installVisemeTicker(timeline: VisemeTimelineItem[]): void {
+    this.removeVisemeTicker();
+    const stage = this;
+    this.activeVisemeTicker = () => {
+      const model = stage.model;
+      const internal = (model?.internalModel as {
+        coreModel?: { setParameterValueById(id: string, v: number): void };
+        motionManager?: { currentAudio?: HTMLAudioElement };
+      } | undefined);
+      const coreModel = internal?.coreModel;
+      const audio = internal?.motionManager?.currentAudio;
+      if (!coreModel || !audio) return;
+      const t = audio.currentTime;
+      // 线性查当前 viseme；timeline 一般 10-30 项，线性成本可接受
+      let vis = 'rest';
+      for (const it of timeline) {
+        if (t >= it.t_start && t < it.t_end) {
+          vis = it.viseme || 'rest';
+          break;
+        }
+      }
+      const delta = AvatarStage.VISEME_FORM_DELTA[vis] ?? 0.0;
+      // 读 expression 对 MouthForm 的基准值
+      let base = 0.0;
+      for (const p of stage.currentExpressionParams) {
+        if (p.id === 'ParamMouthForm') { base = p.value; break; }
+      }
+      const value = Math.max(-1, Math.min(1, base + delta));
+      coreModel.setParameterValueById('ParamMouthForm', value);
+    };
+    const app = this.appAny as { ticker?: { add(fn: () => void): void } } | null;
+    app?.ticker?.add(this.activeVisemeTicker);
+  }
+
+  private removeVisemeTicker(): void {
+    if (!this.activeVisemeTicker) return;
+    const app = this.appAny as { ticker?: { remove(fn: () => void): void } } | null;
+    app?.ticker?.remove(this.activeVisemeTicker);
+    this.activeVisemeTicker = null;
+  }
+
   /** Abort any in-flight speak() and release its audio. */
   stopSpeaking(): void {
     this.stopPlaceholderMouth();
+    this.removeVisemeTicker();
     this.model?.stopSpeaking?.();
     // fork 的 stopSpeaking 不保证触发 onFinish/onError；显式把 speak() Promise 立刻
     // resolve，否则上游 AudioQueue 的 playing 标记卡死 → 新 turn 的音频永远不播
