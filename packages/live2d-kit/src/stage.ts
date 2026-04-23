@@ -233,8 +233,14 @@ export class AvatarStage {
           onError?: () => void;
         },
       ) => Promise<unknown>;
+      expression?: (id?: string | number) => Promise<boolean>;
     } | null;
     if (!model?.speak) return;
+    // 段间兜底：idle motion 在 pixi ticker 上可能已经把表情抹成 neutral，这里在
+    // 每段 TTS 开播前显式再应用一次当前记住的表情，确保视觉上整句都持有
+    if (this.currentExpressionName !== null && model.expression) {
+      try { await model.expression(this.currentExpressionName); } catch { /* ignore */ }
+    }
     await new Promise<void>((resolve) => {
       const settle = () => {
         if (this.activeSpeakResolver === settle) this.activeSpeakResolver = null;
@@ -256,7 +262,7 @@ export class AvatarStage {
         onError: settle,
       };
       if (this.currentExpressionName !== null) {
-        // 每段 TTS 播前主动把 expression 设上，抵消段间 idle motion 的抹除
+        // 双保险：option 里也带上
         speakOpts.expression = this.currentExpressionName;
       }
       void model.speak!(soundUrl, speakOpts);
