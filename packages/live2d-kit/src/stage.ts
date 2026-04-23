@@ -14,7 +14,7 @@ import { DEFAULT_AVATAR, type AvatarConfig } from './avatar-config.js';
 import { ensureCubismCore, isCubismCoreLoaded } from './cubism-core.js';
 
 type PixiModule = typeof import('pixi.js');
-type Live2DBindings = typeof import('pixi-live2d-display/cubism4');
+type Live2DBindings = typeof import('pixi-live2d-display-lipsyncpatch/cubism4');
 
 declare global {
   interface Window {
@@ -22,11 +22,28 @@ declare global {
   }
 }
 
+let bindingsPromise: Promise<{ PIXI: PixiModule; live2d: Live2DBindings }> | null = null;
+
 async function loadBindings(): Promise<{ PIXI: PixiModule; live2d: Live2DBindings }> {
-  const PIXI = await import('pixi.js');
-  if (typeof window !== 'undefined') window.PIXI = window.PIXI ?? PIXI;
-  const live2d = await import('pixi-live2d-display/cubism4');
-  return { PIXI, live2d };
+  // Single-shot so Live2DModel.registerTicker isn't called twice across mounts.
+  if (bindingsPromise) return bindingsPromise;
+
+  bindingsPromise = (async () => {
+    const PIXI = await import('pixi.js');
+    // pixi-live2d-display reads `window.PIXI` at import-evaluation time to
+    // pick up Ticker/DisplayObject — must be set BEFORE the live2d import.
+    if (typeof window !== 'undefined') window.PIXI = window.PIXI ?? PIXI;
+    const live2d = await import('pixi-live2d-display-lipsyncpatch/cubism4');
+    // Motion updates are driven by PIXI.Ticker. If this isn't registered, the
+    // model's internal drawable arrays never initialize and the first render
+    // crashes in CubismRenderer.doDrawModel (see PLAN §14 "关键风险").
+    const LiveCtor = live2d.Live2DModel as unknown as {
+      registerTicker?: (ticker: unknown) => void;
+    };
+    LiveCtor.registerTicker?.(PIXI.Ticker);
+    return { PIXI, live2d };
+  })();
+  return bindingsPromise;
 }
 
 export type StageStatus =
