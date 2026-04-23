@@ -10,9 +10,10 @@ const emit = defineEmits<{ send: [text: string] }>();
 const text = ref('');
 const composing = ref(false);
 const recording = ref(false);
-const asrText = ref('');
 
-let mediaRecorder: MediaRecorder | null = null;
+let audioContext: AudioContext | null = null;
+let mediaStream: MediaStream | null = null;
+let workletNode: AudioWorkletNode | null = null;
 let asrWs: WebSocket | null = null;
 let speechRecognition: any = null;
 
@@ -41,7 +42,9 @@ async function toggleVoice() {
 async function startVoice() {
   // 优先尝试 FunASR（需要 HTTPS 或 localhost）
   try {
-    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
+    const stream = await navigator.mediaDevices.getUserMedia({
+      audio: { sampleRate: 16000, channelCount: 1, echoCancellation: true }
+    });
     await startFunASR(stream);
     return;
   } catch {
@@ -87,28 +90,54 @@ async function startVoice() {
 }
 
 async function startFunASR(stream: MediaStream) {
+  mediaStream = stream;
+
+  // 连接 ASR WebSocket
   const proto = location.protocol === 'https:' ? 'wss' : 'ws';
   asrWs = new WebSocket(`${proto}://${location.host}/ws/asr`);
 
-  asrWs.onopen = () => {
+  asrWs.onopen = async () => {
+    // 发送配置
     asrWs!.send(JSON.stringify({ sample_rate: 16000 }));
-    mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
-    mediaRecorder.ondataavailable = (e) => {
-      if (e.data.size > 0 && asrWs?.readyState === WebSocket.OPEN) {
-        e.data.arrayBuffer().then((buf) => asrWs!.send(buf));
+
+    // 创建 AudioContext
+    audioContext = new AudioContext({ sampleRate: 16000 });
+
+    // 使用 ScriptProcessor（兼容性更好）
+    const source = audioContext.createMediaStreamSource(stream);
+    const processor = audioContext.createScriptProcessor(4096, 1, 1);
+
+    processor.onaudioprocess = (e) => {
+      if (asrWs?.readyState !== WebSocket.OPEN) return;
+      const data = e.inputBuffer.getChannelData(0);
+      // 转换为 Int16 PCM
+      const pcm = new Int16Array(data.length);
+      for (let i = 0; i < data.length; i++) {
+        const s = Math.max(-1, Math.min(1, data[i]));
+        pcm[i] = s < 0 ? s * 0x8000 : s * 0x7FFF;
       }
+      asrWs!.send(pcm.buffer);
     };
-    mediaRecorder.start(250);
+
+    source.connect(processor);
+    processor.connect(audioContext.destination);
+    workletNode = processor as any;
+
     recording.value = true;
-    asrText.value = '';
   };
 
   asrWs.onmessage = (ev) => {
     const data = JSON.parse(ev.data);
     if (data.type === 'asr_result') {
-      if (data.text) { asrText.value = data.text; text.value = data.text; }
-      if (data.is_final) { stopVoice(); if (text.value.trim()) submit(); }
+      if (data.text) {
+        text.value = data.text;
+      }
+      if (data.is_final) {
+        stopVoice();
+        if (text.value.trim()) submit();
+      }
     } else if (data.type === 'asr_error') {
+      console.error('ASR error:', data.message);
       stopVoice();
     }
   };
@@ -120,11 +149,20 @@ async function startFunASR(stream: MediaStream) {
 function stopVoice() {
   recording.value = false;
 
-  if (mediaRecorder?.state === 'recording') {
-    mediaRecorder.stop();
-    mediaRecorder.stream.getTracks().forEach((t) => t.stop());
+  if (workletNode) {
+    workletNode.disconnect();
+    workletNode = null;
   }
-  mediaRecorder = null;
+
+  if (audioContext) {
+    audioContext.close();
+    audioContext = null;
+  }
+
+  if (mediaStream) {
+    mediaStream.getTracks().forEach(t => t.stop());
+    mediaStream = null;
+  }
 
   if (asrWs?.readyState === WebSocket.OPEN) {
     asrWs.close();
