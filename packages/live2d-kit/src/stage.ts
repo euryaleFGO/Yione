@@ -129,6 +129,42 @@ export class AvatarStage {
       app.stage.addChild(model as unknown as Parameters<typeof app.stage.addChild>[0]);
       this.fitModel();
 
+      // Dev-time hook: expose the live model + a debug probe so lipsync
+      // misbehaviour can be inspected from the browser console via:
+      //   await window.__webling.speak('/static/tts/...wav')
+      //   window.__webling.probe()    // prints mouthSync / lipSync state
+      if (typeof window !== 'undefined') {
+        (window as unknown as { __webling: unknown }).__webling = {
+          model,
+          app,
+          speak: (url: string, opts?: SpeakOptions) => this.speak(url, opts),
+          probe: () => {
+            const im = (model as unknown as {
+              internalModel?: {
+                lipSync?: boolean;
+                motionManager?: {
+                  currentAudio?: HTMLAudioElement;
+                  currentAnalyzer?: AnalyserNode;
+                  mouthSync?: () => number;
+                  lipSyncIds?: string[];
+                };
+              };
+            }).internalModel;
+            const mm = im?.motionManager;
+            return {
+              lipSync: im?.lipSync,
+              hasAudio: !!mm?.currentAudio,
+              audioEnded: mm?.currentAudio?.ended,
+              audioPaused: mm?.currentAudio?.paused,
+              audioCurrentTime: mm?.currentAudio?.currentTime,
+              hasAnalyzer: !!mm?.currentAnalyzer,
+              mouthSync: mm?.mouthSync?.(),
+              lipSyncIds: mm?.lipSyncIds,
+            };
+          },
+        };
+      }
+
       // Re-fit on container resize. `resizeTo` on PIXI polls via ticker and
       // can race with user events; we reposition ourselves against CSS pixels
       // instead of renderer-buffer pixels to avoid DPR scaling surprises.
