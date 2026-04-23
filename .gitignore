@@ -39,3 +39,6 @@ apps/web/public/live2dcubismcore.min.js
 
 # Local config
 .claude/settings.local.json
+
+# M6：租户/API Key 明文 → 不入库；仓库里只留 tenants.example.json
+backend/app/data/tenants.json

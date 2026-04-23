@@ -12,7 +12,7 @@ from fastapi.staticfiles import StaticFiles
 
 from app.config import BACKEND_ROOT, get_settings
 from app.integrations.ling_adapter import inject_ling_path
-from app.routers import chat, health, sessions, tts
+from app.routers import chat, embed, health, sessions, tts
 from app.ws import chat_ws
 
 logger = logging.getLogger(__name__)
@@ -52,6 +52,7 @@ def create_app() -> FastAPI:
     app.include_router(sessions.router, prefix="/api")
     app.include_router(chat.router, prefix="/api")
     app.include_router(tts.router, prefix="/api")
+    app.include_router(embed.router, prefix="/api")
     app.include_router(chat_ws.router)
 
     return app

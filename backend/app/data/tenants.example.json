@@ -1,0 +1,16 @@
+{
+  "tenants": [
+    {
+      "id": "demo",
+      "_comment": "api_key_hash 是 sha256(api_key) 的十六进制小写。示例 api_key=webling-demo-key。生产环境请换成你自己的值并把本文件复制为 tenants.json（已 gitignore）。",
+      "api_key_hash": "3a5ab5c1e2c0e69a1e0e7db4a9deafd6ac30b4b86b2c50d6f49e9d4f6cc0432a",
+      "allowed_origins": [
+        "http://localhost:5173",
+        "http://127.0.0.1:5173"
+      ],
+      "character_whitelist": ["ling"],
+      "daily_quota": 2000,
+      "scope": ["chat", "embed"]
+    }
+  ]
+}
