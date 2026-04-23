@@ -5,7 +5,7 @@ milestone_name: milestone
 status: unknown
 last_updated: "2026-04-23T05:13:10.358Z"
 progress:
-  total_phases: 27
+  total_phases: 28
   completed_phases: 0
   total_plans: 1
   completed_plans: 0
@@ -59,6 +59,12 @@ progress:
 - [ ] WS schema 一致性 CI：pydantic ↔ TypeScript d.ts 自动对比
 - [ ] ruff 配置补 BLE001
 - [ ] live2dcubismcore.min.js 手动拷贝流程优化
+
+## 累积上下文
+
+### Roadmap Evolution
+
+- Phase 28 added: M34 实时对话循环 — 点击开始对话后麦克风长开，FunASR is_final 自动触发 user_message，边流边按句 TTS，speech_start 打断；TTS 播放期麦克风保持开启（依赖浏览器 AEC 消回声）、仅靠 is_final 判停、打断后无 is_final 停 listening；speech_start 信号源 = FunASR 2pass-online 首 partial chunk
 
 ---
 *状态初始化：2026-04-23*

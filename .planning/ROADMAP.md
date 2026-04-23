@@ -34,6 +34,7 @@
 | 25 | M31 知识图谱 UI | 图谱可视化 | M31 | 2 |
 | 26 | M32 Prompt 管理后台 | A/B + 指标 | M32 | 3 |
 | 27 | M33 生产化 | Grafana + 部署 | M33 | 3 |
+| 28 | M34 实时对话循环 | 点击即对话，is_final 自动触发，TTS 可打断 | M34 | 5 |
 
 ## 阶段详情
 
@@ -450,5 +451,22 @@ Plans:
 **依赖：** M14
 
 ---
+
+### Phase 28: M34 实时对话循环
+
+**目标：** 从"对讲机式"升级成"实时对谈"——点击"开始对话"后进入 listening 循环，FunASR `is_final` 自动触发 `user_message`，LLM 边流边按句 TTS 播放，用户开口 `speech_start` 立即 cancel 当前 turn 回到 listening。
+
+**需求：** M34
+
+**成功标准：**
+1. InputBar 麦克风按钮改造成"开始对话/结束对话"两态切换，点击后进入/退出 listening 循环
+2. FunASR `is_final` 到达后前端自动提交 user_message，无需手动确认
+3. TTS 播放期麦克风**保持开启**（依赖浏览器 `echoCancellation` 做回声消除，不主动 mute），FunASR 照常监听以便打断
+4. 用户在 speaking 状态下开口时触发 `speech_start`（信号源为 FunASR 2pass-online 首个 partial chunk），后端立即 cancel 当前 turn，前端状态切 listening
+5. 打断后若没有后续 `is_final` 到达，停在 listening 不自动起新 turn；新 `is_final` 到才开新 turn
+
+**依赖：** M3（按句 TTS pipeline，已完成）、M4（cancel turn 基础设施，已完成）、M18（FunASR 流式 ASR，已完成）
+
+---
 *路线图创建：2026-04-23*
-*最后更新：2026-04-23，初始化*
+*最后更新：2026-04-23，追加 M34*
