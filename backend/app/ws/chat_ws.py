@@ -1,13 +1,22 @@
 """Chat WebSocket endpoint.
 
 Accepts ``?session_id=...`` for now; full JWT auth lands in M6.
-After a subtitle-final event the server optionally triggers a TTS stream
-and emits ``audio`` events as wav segments become available (M3).
+
+Pipelined LLM → TTS:
+- LLM stream is split into sentences on ``。！？.!?\\n``.
+- Each completed sentence is enqueued to a serial TTS worker that runs
+  concurrently with the LLM, so the first audio segment starts playing
+  well before the LLM has finished generating.
+- The worker stamps every wav segment with a monotonically increasing
+  *global* ``segment_idx`` so the browser's AudioQueue plays in reply order
+  even though several TTS jobs are fired back to back.
 """
 
 from __future__ import annotations
 
+import asyncio
 import logging
+import re
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
@@ -33,26 +42,92 @@ async def _send(ws: WebSocket, event: ServerEvent) -> None:
     await ws.send_json(event.model_dump(mode="json"))
 
 
-async def _speak(ws: WebSocket, text: str) -> None:
-    """Drive a TTS stream, emitting ``audio`` events per segment.
+_SENTENCE_END = re.compile(r"[。！？.!?\n]")
+_MIN_SENTENCE_CHARS = 4  # avoid firing TTS on fragments like "好。"
 
-    Errors (CosyVoice unreachable, job failed) are reported via ``error``
-    events but do not tear down the WS — text chat stays usable.
+
+def _pop_sentence(buf: str) -> tuple[str | None, str]:
+    """Find the first complete sentence in *buf*.
+
+    Returns ``(sentence, remainder)``. If no sentence has terminated yet
+    (or the pending sentence is shorter than ``_MIN_SENTENCE_CHARS`` when
+    trimmed), returns ``(None, buf)`` so the caller keeps buffering.
+    """
+    match = _SENTENCE_END.search(buf)
+    if not match:
+        return None, buf
+    end = match.end()
+    sentence = buf[:end]
+    if len(sentence.strip()) < _MIN_SENTENCE_CHARS:
+        return None, buf
+    return sentence, buf[end:]
+
+
+async def _tts_worker(
+    ws: WebSocket,
+    pending: asyncio.Queue[str | None],
+    state: dict[str, int],
+) -> None:
+    """Drain *pending* sentences → TTS → AudioEvent. Sentinel ``None`` quits.
+
+    *state* is a single-slot dict used to share the running segment counter
+    with the caller (simpler than a class for M3.5).
     """
     tts = get_tts_service()
-    try:
-        async for seg in tts.synth_stream(text):
-            await _send(
-                ws,
-                AudioEvent(
-                    url=seg.url,
-                    segment_idx=seg.segment_idx,
-                    sample_rate=seg.sample_rate,
-                ),
-            )
-    except TTSError as exc:
-        logger.warning("TTS failed: %s", exc)
-        await _send(ws, ErrorEvent(code="tts_failed", message=str(exc)))
+    while True:
+        sentence = await pending.get()
+        if sentence is None:
+            return
+        try:
+            async for seg in tts.synth_stream(sentence):
+                state["next_idx"] += 1
+                await _send(
+                    ws,
+                    AudioEvent(
+                        url=seg.url,
+                        segment_idx=state["next_idx"],
+                        sample_rate=seg.sample_rate,
+                    ),
+                )
+        except TTSError as exc:
+            logger.warning("TTS failed: %s", exc)
+            await _send(ws, ErrorEvent(code="tts_failed", message=str(exc)))
+
+
+async def _handle_user_message(ws: WebSocket, user_text: str) -> None:
+    agent = get_agent_service()
+
+    await _send(ws, StateEvent(value="processing"))
+
+    pending: asyncio.Queue[str | None] = asyncio.Queue()
+    counter = {"next_idx": 0}
+    worker = asyncio.create_task(_tts_worker(ws, pending, counter))
+
+    buffer = ""      # rolling LLM output (all of it, for final subtitle)
+    unspoken = ""    # text accumulated but not yet sent to TTS
+
+    async for chunk in agent.stream_reply(user_text):
+        buffer += chunk
+        unspoken += chunk
+        await _send(
+            ws,
+            SubtitleEvent(text=buffer, is_final=False, emotion="neutral"),
+        )
+        while True:
+            sentence, unspoken = _pop_sentence(unspoken)
+            if sentence is None:
+                break
+            await pending.put(sentence)
+
+    # Final subtitle + flush remainder to TTS
+    await _send(ws, SubtitleEvent(text=buffer, is_final=True, emotion="neutral"))
+    if unspoken.strip():
+        await pending.put(unspoken)
+
+    await pending.put(None)  # stop the worker after the last sentence
+    await _send(ws, StateEvent(value="speaking"))
+    await worker  # let it finish draining
+    await _send(ws, StateEvent(value="idle"))
 
 
 @router.websocket("/ws/chat")
@@ -62,7 +137,6 @@ async def chat_ws(ws: WebSocket, session_id: str = Query(...)) -> None:
         await ws.close(code=4404, reason="session not found")
         return
 
-    agent = get_agent_service()
     await ws.accept()
     await _send(ws, StateEvent(value="idle"))
 
@@ -80,26 +154,7 @@ async def chat_ws(ws: WebSocket, session_id: str = Query(...)) -> None:
                 continue
 
             if event.type == "user_message":
-                await _send(ws, StateEvent(value="processing"))
-                buffer: list[str] = []
-                async for chunk in agent.stream_reply(event.text):
-                    buffer.append(chunk)
-                    await _send(
-                        ws,
-                        SubtitleEvent(
-                            text="".join(buffer),
-                            is_final=False,
-                            emotion="neutral",
-                        ),
-                    )
-                final_text = "".join(buffer)
-                await _send(
-                    ws,
-                    SubtitleEvent(text=final_text, is_final=True, emotion="neutral"),
-                )
-                await _send(ws, StateEvent(value="speaking"))
-                await _speak(ws, final_text)
-                await _send(ws, StateEvent(value="idle"))
+                await _handle_user_message(ws, event.text)
                 continue
 
             if event.type == "cancel":
