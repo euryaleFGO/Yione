@@ -108,6 +108,25 @@ class AudioEvent(_ServerBase):
     sample_rate: int
 
 
+class VisemeTimelineItem(_ServerBase):
+    char: str
+    t_start: float
+    t_end: float
+    viseme: str  # "A" | "O" | "I" | "E" | "U" | "rest"
+
+
+class VisemeTimelineEvent(_ServerBase):
+    """M36：跟 AudioEvent 配对出现，把该段 TTS 的字符级嘴型时间轴推给前端。
+
+    前端按 audio.currentTime 查 timeline，驱动 ParamMouthForm / ParamMouthOpenY，
+    与情绪 expression 的 MouthForm 叠加。
+    """
+
+    type: Literal["viseme_timeline"] = "viseme_timeline"
+    segment_idx: int
+    timeline: list[VisemeTimelineItem]
+
+
 class AudioRmsEvent(_ServerBase):
     type: Literal["audio_rms"] = "audio_rms"
     rms: float
@@ -155,6 +174,7 @@ ServerEvent = (
     | AudioEvent
     | AudioRmsEvent
     | VisemeEvent
+    | VisemeTimelineEvent
     | ErrorEvent
     | PongEvent
     | PlaceholderEvent
@@ -205,6 +225,8 @@ __all__ = [
     "SubtitleEvent",
     "UserMessageEvent",
     "VisemeEvent",
+    "VisemeTimelineEvent",
+    "VisemeTimelineItem",
     "parse_client_event",
 ]
 

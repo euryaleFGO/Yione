@@ -46,6 +46,8 @@ from app.schemas.ws import (
     ServerEvent,
     StateEvent,
     SubtitleEvent,
+    VisemeTimelineEvent,
+    VisemeTimelineItem,
     parse_client_event,
 )
 from app.services import emotion_service
@@ -162,6 +164,22 @@ async def _tts_worker(
                         sample_rate=seg.sample_rate,
                     ),
                 )
+                if seg.timeline:
+                    await _send(
+                        ws,
+                        VisemeTimelineEvent(
+                            segment_idx=state.next_idx,
+                            timeline=[
+                                VisemeTimelineItem(
+                                    char=it.char,
+                                    t_start=it.t_start,
+                                    t_end=it.t_end,
+                                    viseme=it.viseme,
+                                )
+                                for it in seg.timeline
+                            ],
+                        ),
+                    )
         except TTSError as exc:
             logger.warning("TTS failed: %s", exc)
             await _send(ws, ErrorEvent(code="tts_failed", message=str(exc)))

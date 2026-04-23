@@ -12,6 +12,16 @@ from pathlib import Path
 
 
 @dataclass(slots=True, frozen=True)
+class VisemeItem:
+    """字符级 viseme 时间轴的一项。"""
+
+    char: str
+    t_start: float
+    t_end: float
+    viseme: str  # "A" | "O" | "I" | "E" | "U" | "rest"
+
+
+@dataclass(slots=True, frozen=True)
 class AudioSegment:
     """一段 TTS 音频。"""
 
@@ -20,6 +30,8 @@ class AudioSegment:
     path: Path
     sample_rate: int
     duration_s: float
+    # M36：wav2vec2 forced alignment 产出的字符级嘴型时间轴；provider 不支持就空
+    timeline: tuple[VisemeItem, ...] = ()
 
 
 class TTSError(RuntimeError):

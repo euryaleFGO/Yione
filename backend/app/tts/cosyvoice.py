@@ -6,6 +6,7 @@
 from __future__ import annotations
 
 import asyncio
+import base64
 import logging
 import time
 import uuid
@@ -15,7 +16,7 @@ from pathlib import Path
 import httpx
 
 from app.config import BACKEND_ROOT, get_settings
-from app.tts.base import AudioSegment, TTSProvider, TTSError
+from app.tts.base import AudioSegment, TTSError, TTSProvider, VisemeItem
 
 logger = logging.getLogger(__name__)
 
@@ -87,9 +88,14 @@ class CosyVoiceProvider(TTSProvider):
                 raise TTSError("first segment timeout")
 
             try:
+                # with_timeline=1 → 服务端返 JSON，带 wav_b64 + viseme timeline
                 seg_resp = await self._client.get(
                     f"{self._base_url}/tts/dequeue",
-                    params={"job_id": job_id, "timeout": dequeue_timeout},
+                    params={
+                        "job_id": job_id,
+                        "timeout": dequeue_timeout,
+                        "with_timeline": 1,
+                    },
                     timeout=dequeue_timeout + 5,
                 )
             except httpx.HTTPError as exc:
@@ -109,17 +115,30 @@ class CosyVoiceProvider(TTSProvider):
                 raise TTSError(f"dequeue status {seg_resp.status_code}")
 
             seg_idx += 1
-            sample_rate = int(seg_resp.headers.get("X-Sample-Rate", 22050))
-            duration = float(seg_resp.headers.get("X-Duration", 0.0) or 0.0)
+            body = seg_resp.json()
+            sample_rate = int(body.get("sample_rate") or 22050)
+            wav_bytes = base64.b64decode(body.get("wav_b64") or "")
+            timeline_raw = body.get("timeline") or []
+            timeline = tuple(
+                VisemeItem(
+                    char=str(it.get("char", "")),
+                    t_start=float(it.get("t_start", 0.0)),
+                    t_end=float(it.get("t_end", 0.0)),
+                    viseme=str(it.get("viseme", "rest")),
+                )
+                for it in timeline_raw
+                if isinstance(it, dict)
+            )
 
             fname = f"{uuid.uuid4().hex}.wav"
             path = self._cache_dir / fname
-            await asyncio.to_thread(path.write_bytes, seg_resp.content)
+            await asyncio.to_thread(path.write_bytes, wav_bytes)
 
             yield AudioSegment(
                 segment_idx=seg_idx,
                 url=f"/static/tts/{fname}",
                 path=path,
                 sample_rate=sample_rate,
-                duration_s=duration,
+                duration_s=0.0,
+                timeline=timeline,
             )
