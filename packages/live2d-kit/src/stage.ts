@@ -252,10 +252,20 @@ export class AvatarStage {
    * priority 默认 2（NORMAL），会抢占 idle 循环；若希望不打断 idle 可以传 1。
    */
   async playMotion(group: string, index?: number, priority = 2): Promise<void> {
-    const model = this.model;
+    const model = this.model as {
+      motion?: (
+        g: string,
+        i?: number,
+        p?: number,
+        opts?: { resetExpression?: boolean },
+      ) => Promise<boolean>;
+    } | null;
     if (!model?.motion) return;
     try {
-      await model.motion(group, index, priority);
+      // resetExpression: false —— fork 默认为 true，motion 播起来会把当前 expression
+      // 抹成 neutral。我们希望情绪切换发的 motion（Tap@Body / Flick / ...）与
+      // 同时设置的表情共存；后续 idle 动作也不要擦表情。
+      await model.motion(group, index, priority, { resetExpression: false });
     } catch (err) {
       // motion 失败不应该冒泡打断主流程；只在控制台留痕
       // eslint-disable-next-line no-console
