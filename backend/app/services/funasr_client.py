@@ -25,10 +25,11 @@ logger = logging.getLogger(__name__)
 class ASREvent(TypedDict):
     """ASR 识别事件。
 
-    - ``mode="partial"``：2pass-online 中间稿。``text`` 为 ``committed + pending``。
-    - ``mode="final"``：2pass-offline 句终稿到达，``text`` 为刚定稿的整句文本；
-      ``committed`` 为截至此刻累积的所有定稿句子拼起来，方便消费方选择按句处理
-      还是按累积稿处理。
+    - ``mode="partial"``：2pass-online 中间稿。``text`` 为**当前正在说的那一句**
+      （还没 commit 的 pending 部分），不含历史。上层直接拿 ``text`` 显示即可。
+    - ``mode="final"``：2pass-offline 句终稿到达，``text`` 为刚定稿的整句文本。
+    - ``committed``：截至此刻累积的所有定稿句子拼起来，供消费方按需使用；
+      比如 M18 兼容路径用它填 asr_result。M34 实时对话循环按句切不需要它。
     """
 
     mode: str  # "partial" | "final"
@@ -80,13 +81,14 @@ class FunASRClient:
                             text = data.get("text", "")
                             mode = data.get("mode", "")
                             if mode == "2pass-online":
-                                # 中间稿：pending 直接覆盖
+                                # 中间稿：pending 直接覆盖；partial.text 只发当前
+                                # 半句（不累积历史），上层直接显示即可
                                 state["pending"] = text
                                 if not text:
                                     continue
                                 await events.put({
                                     "mode": "partial",
-                                    "text": state["committed"] + state["pending"],
+                                    "text": state["pending"],
                                     "committed": state["committed"],
                                 })
                             elif mode == "2pass-offline":
