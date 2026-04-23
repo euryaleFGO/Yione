@@ -20,6 +20,8 @@ export default defineConfig(({ mode }) => {
         '/api': { target: apiBase, changeOrigin: true },
         '/ws': { target: apiBase.replace(/^http/, 'ws'), ws: true, changeOrigin: true },
         '/static': { target: apiBase, changeOrigin: true },
+        '/docs': { target: apiBase, changeOrigin: true },
+        '/openapi.json': { target: apiBase, changeOrigin: true },
       },
     },
   };
