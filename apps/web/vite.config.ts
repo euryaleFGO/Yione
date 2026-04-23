@@ -18,7 +18,8 @@ export default defineConfig(({ mode }) => {
       port: 5173,
       proxy: {
         '/api': { target: apiBase, changeOrigin: true },
-        '/ws': { target: apiBase.replace(/^http/, 'ws'), ws: true, changeOrigin: true },
+        '/ws/chat': { target: apiBase.replace(/^http/, 'ws'), ws: true, changeOrigin: true },
+        '/ws/asr': { target: apiBase.replace(/^http/, 'ws'), ws: true, changeOrigin: true },
         '/static': { target: apiBase, changeOrigin: true },
         '/docs': { target: apiBase, changeOrigin: true },
         '/openapi.json': { target: apiBase, changeOrigin: true },

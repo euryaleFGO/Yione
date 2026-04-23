@@ -16,7 +16,7 @@ from app.integrations.ling_adapter import inject_ling_path
 from app.routers import characters, chat, embed, games, health, karaoke, knowledge_graph, metrics, prompts, rvc, sessions, skills, speakers, tools, tts
 from app.services.session_service import SessionService, set_session_service
 from app.services.tenant_service import TenantService, get_tenant_service
-from app.ws import chat_ws
+from app.ws import asr_ws, chat_ws
 
 logger = logging.getLogger(__name__)
 
@@ -96,6 +96,7 @@ def create_app() -> FastAPI:
     app.include_router(karaoke.router, prefix="/api")
     app.include_router(metrics.router)
     app.include_router(chat_ws.router)
+    app.include_router(asr_ws.router)
 
     return app
 

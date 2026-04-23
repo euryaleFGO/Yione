@@ -10,8 +10,10 @@ const emit = defineEmits<{ send: [text: string] }>();
 const text = ref('');
 const composing = ref(false);
 const recording = ref(false);
+const asrText = ref('');
 
-let recognition: any = null;
+let mediaRecorder: MediaRecorder | null = null;
+let asrWs: WebSocket | null = null;
 
 function submit() {
   const trimmed = text.value.trim();
@@ -27,62 +29,92 @@ function onKeydown(e: KeyboardEvent) {
   }
 }
 
-function toggleVoice() {
+async function toggleVoice() {
   if (recording.value) {
     stopVoice();
   } else {
-    startVoice();
+    await startVoice();
   }
 }
 
-function startVoice() {
-  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
-  if (!SpeechRecognition) {
-    alert('当前浏览器不支持语音输入，请使用 Chrome 或 Edge');
-    return;
-  }
+async function startVoice() {
+  try {
+    const stream = await navigator.mediaDevices.getUserMedia({ audio: true });
 
-  recognition = new SpeechRecognition();
-  recognition.lang = 'zh-CN';
-  recognition.continuous = false;
-  recognition.interimResults = true;
+    // 连接 ASR WebSocket
+    const proto = location.protocol === 'https:' ? 'wss' : 'ws';
+    asrWs = new WebSocket(`${proto}://${location.host}/ws/asr`);
 
-  recognition.onresult = (event: any) => {
-    let final = '';
-    let interim = '';
-    for (let i = 0; i < event.results.length; i++) {
-      if (event.results[i].isFinal) {
-        final += event.results[i][0].transcript;
-      } else {
-        interim += event.results[i][0].transcript;
+    asrWs.onopen = () => {
+      // 发送配置
+      asrWs!.send(JSON.stringify({ sample_rate: 16000 }));
+
+      // 开始录音
+      mediaRecorder = new MediaRecorder(stream, { mimeType: 'audio/webm;codecs=opus' });
+
+      mediaRecorder.ondataavailable = (e) => {
+        if (e.data.size > 0 && asrWs?.readyState === WebSocket.OPEN) {
+          e.data.arrayBuffer().then((buf) => {
+            asrWs!.send(buf);
+          });
+        }
+      };
+
+      mediaRecorder.start(250); // 每 250ms 发送一次
+      recording.value = true;
+      asrText.value = '';
+    };
+
+    asrWs.onmessage = (ev) => {
+      const data = JSON.parse(ev.data);
+      if (data.type === 'asr_result') {
+        if (data.text) {
+          asrText.value = data.text;
+          text.value = data.text;
+        }
+        if (data.is_final) {
+          stopVoice();
+          // 自动发送
+          if (text.value.trim()) {
+            submit();
+          }
+        }
+      } else if (data.type === 'asr_error') {
+        console.error('ASR error:', data.message);
+        stopVoice();
       }
-    }
-    text.value = final || interim;
-  };
+    };
 
-  recognition.onend = () => {
-    recording.value = false;
-    // 如果有识别结果，自动发送
-    if (text.value.trim()) {
-      submit();
-    }
-  };
+    asrWs.onerror = () => {
+      stopVoice();
+    };
 
-  recognition.onerror = () => {
-    recording.value = false;
-  };
-
-  recognition.start();
-  recording.value = true;
+    asrWs.onclose = () => {
+      if (recording.value) stopVoice();
+    };
+  } catch (err) {
+    console.error('Microphone access denied:', err);
+    alert('无法访问麦克风，请检查浏览器权限');
+  }
 }
 
 function stopVoice() {
-  recognition?.stop();
   recording.value = false;
+
+  if (mediaRecorder?.state === 'recording') {
+    mediaRecorder.stop();
+    mediaRecorder.stream.getTracks().forEach((t) => t.stop());
+  }
+  mediaRecorder = null;
+
+  if (asrWs?.readyState === WebSocket.OPEN) {
+    asrWs.close();
+  }
+  asrWs = null;
 }
 
 onBeforeUnmount(() => {
-  recognition?.abort();
+  stopVoice();
 });
 </script>
 
