@@ -2,17 +2,19 @@ import { resolve } from 'node:path';
 
 import { defineConfig } from 'vite';
 
+const entry = process.env.ENTRY || 'index';
+
 export default defineConfig({
-  publicDir: 'public',
+  publicDir: entry === 'index' ? 'public' : false,
   build: {
     lib: {
-      entry: resolve(__dirname, 'src/index.ts'),
-      name: 'WeblingEmbed',
+      entry: resolve(__dirname, `src/${entry}.ts`),
+      name: entry === 'index' ? 'WeblingEmbed' : 'WeblingComponent',
       formats: ['iife'],
-      fileName: () => 'embed.js',
+      fileName: () => entry === 'index' ? 'embed.js' : 'web-component.js',
     },
     outDir: 'dist',
-    emptyOutDir: true,
+    emptyOutDir: entry === 'index',
   },
   define: {
     'process.env.NODE_ENV': JSON.stringify('production'),
