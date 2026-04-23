@@ -55,6 +55,16 @@ export interface SpeakOptions {
   crossOrigin?: string;
 }
 
+/**
+ * 外部（AvatarStage 组件 / chat store）能对模型做的事情集合。
+ * 组件 ready 时把这个对象抛出去，让上层既能驱动 TTS 嘴型，又能触发情绪动作。
+ */
+export interface AvatarControls {
+  speak: (url: string, opts?: SpeakOptions) => Promise<void>;
+  stopSpeaking: () => void;
+  playMotion: (group: string, index?: number, priority?: number) => Promise<void>;
+}
+
 type Live2DInstance = {
   width: number;
   height: number;
@@ -80,6 +90,12 @@ type Live2DInstance = {
   ) => Promise<boolean>;
   /** Stop current speak + lipsync. */
   stopSpeaking?: () => void;
+  /**
+   * pixi-live2d-display 的 motion API。group 是 model3.json 里 Motions 的 key
+   * （Hiyori 是 Idle / Tap@Body / Flick / ...），index 省略时随机选一个；
+   * priority 见 pixi-live2d-display 常量（0=NONE 1=IDLE 2=NORMAL 3=FORCE）。
+   */
+  motion?: (group: string, index?: number, priority?: number) => Promise<boolean>;
 };
 
 export class AvatarStage {
@@ -138,6 +154,8 @@ export class AvatarStage {
           model,
           app,
           speak: (url: string, opts?: SpeakOptions) => this.speak(url, opts),
+          playMotion: (group: string, index?: number, priority?: number) =>
+            this.playMotion(group, index, priority),
           probe: () => {
             const im = (model as unknown as {
               internalModel?: {
@@ -207,6 +225,23 @@ export class AvatarStage {
   /** Abort any in-flight speak() and release its audio. */
   stopSpeaking(): void {
     this.model?.stopSpeaking?.();
+  }
+
+  /**
+   * 播放 motion group 里的一个动作；group 不存在会静默忽略。
+   *
+   * priority 默认 2（NORMAL），会抢占 idle 循环；若希望不打断 idle 可以传 1。
+   */
+  async playMotion(group: string, index?: number, priority = 2): Promise<void> {
+    const model = this.model;
+    if (!model?.motion) return;
+    try {
+      await model.motion(group, index, priority);
+    } catch (err) {
+      // motion 失败不应该冒泡打断主流程；只在控制台留痕
+      // eslint-disable-next-line no-console
+      console.warn('[live2d] motion failed', group, err);
+    }
   }
 
   unmount(): void {

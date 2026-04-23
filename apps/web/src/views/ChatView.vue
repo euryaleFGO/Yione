@@ -1,7 +1,7 @@
 <script setup lang="ts">
-import type { SpeakFn } from '@webling/core';
+import type { AvatarControls } from '@webling/live2d-kit';
 import { storeToRefs } from 'pinia';
-import { onBeforeUnmount, onMounted, ref } from 'vue';
+import { computed, onBeforeUnmount, onMounted, ref } from 'vue';
 
 import AvatarStage from '@/components/AvatarStage.vue';
 import InputBar from '@/components/InputBar.vue';
@@ -12,6 +12,11 @@ const chat = useChatStore();
 const { messages, agentState, connection, lastError, session } = storeToRefs(chat);
 const backendOk = ref<boolean | null>(null);
 const backendVersion = ref('');
+
+// agent 在忙（processing 或 speaking）时暴露"停止"按钮
+const canInterrupt = computed(
+  () => agentState.value === 'processing' || agentState.value === 'speaking',
+);
 
 onMounted(async () => {
   try {
@@ -34,12 +39,16 @@ onBeforeUnmount(() => {
   void chat.disconnect();
 });
 
-function onAvatarReady(speak: SpeakFn) {
-  chat.setSpeaker(speak);
+function onAvatarReady(controls: AvatarControls) {
+  chat.setAvatarControls(controls);
 }
 
 async function onSend(text: string) {
   await chat.submit(text, connection.value === 'open' ? 'ws' : 'rest');
+}
+
+function onInterrupt() {
+  chat.interrupt();
 }
 </script>
 
@@ -62,6 +71,16 @@ async function onSend(text: string) {
         <span>·</span>
         <span>{{ agentState }}</span>
       </div>
+
+      <!-- 打断/停止按钮：只在玲正在思考或说话时出现 -->
+      <button
+        v-if="canInterrupt"
+        type="button"
+        class="absolute top-2 right-2 z-10 text-xs px-3 py-1.5 rounded-full bg-rose-500/90 hover:bg-rose-500 text-white shadow-sm backdrop-blur"
+        @click="onInterrupt"
+      >
+        停止
+      </button>
     </div>
 
     <!-- Chat panel -->

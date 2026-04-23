@@ -20,7 +20,9 @@ export type ClientEvent =
   | { type: 'user_message'; text: string }
   | { type: 'cancel' }
   | { type: 'ping' }
-  | { type: 'change_character'; character_id: string };
+  | { type: 'change_character'; character_id: string }
+  | { type: 'speech_start' }
+  | { type: 'speech_end' };
 
 // -------- Server → Client --------
 

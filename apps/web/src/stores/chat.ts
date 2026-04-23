@@ -1,4 +1,5 @@
-import { AudioQueue, type Message, type SessionSummary, type SpeakFn } from '@webling/core';
+import { AudioQueue, type Message, type SessionSummary } from '@webling/core';
+import type { AvatarControls } from '@webling/live2d-kit';
 import { defineStore } from 'pinia';
 import { ref, shallowRef } from 'vue';
 
@@ -22,22 +23,26 @@ export const useChatStore = defineStore('chat', () => {
   let socket: ReturnType<typeof createChatSocket> | null = null;
   let streamingMessageId: string | null = null;
 
-  // Speaker function is set by the AvatarStage component once the Live2D model
-  // is ready. If the avatar isn't mounted (or Cubism Core is missing), audio
-  // events are silently dropped — chat UI still works.
-  let speakFn: SpeakFn = () => Promise.resolve();
+  // 一组由 AvatarStage 在模型 ready 时注入的控制器。若头像没挂出来（比如缺 Cubism
+  // Core），所有调用都静默降级，聊天 UI 仍可用。
+  const noop: AvatarControls = {
+    speak: () => Promise.resolve(),
+    stopSpeaking: () => {},
+    playMotion: () => Promise.resolve(),
+  };
+  let avatar: AvatarControls = noop;
 
   const audioQueue = new AudioQueue({
     speak: async (url) => {
-      await speakFn(url);
+      await avatar.speak(url);
     },
     onError: (err) => {
       lastError.value = `audio: ${err.message}`;
     },
   });
 
-  function setSpeaker(fn: SpeakFn): void {
-    speakFn = fn;
+  function setAvatarControls(controls: AvatarControls): void {
+    avatar = controls;
   }
 
   async function ensureSession(characterId = 'ling'): Promise<SessionSummary> {
@@ -80,6 +85,11 @@ export const useChatStore = defineStore('chat', () => {
             segmentIdx: ev.segment_idx,
             sampleRate: ev.sample_rate,
           });
+          break;
+        case 'motion':
+          // 后端推 motion group 名（Hiyori: Tap@Body / Flick / ...），
+          // 交给 Live2D 播一次动作；playMotion 内部已经吞错
+          void avatar.playMotion(ev.name);
           break;
         case 'error':
           lastError.value = `${ev.code}: ${ev.message}`;
@@ -130,6 +140,10 @@ export const useChatStore = defineStore('chat', () => {
       text,
       createdAt: new Date().toISOString(),
     });
+    // 新消息隐式打断当前 turn；前端这边把未播的段清掉，进行中的那段由 stage 停
+    audioQueue.clear();
+    avatar.stopSpeaking();
+    streamingMessageId = null;
     socket.sendUserMessage(text);
   }
 
@@ -167,6 +181,14 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
+  /** M4：用户点停止/打断时调用。 */
+  function interrupt(): void {
+    socket?.cancel();
+    audioQueue.clear();
+    avatar.stopSpeaking();
+    streamingMessageId = null;
+  }
+
   async function disconnect(): Promise<void> {
     socket?.close();
     socket = null;
@@ -184,7 +206,8 @@ export const useChatStore = defineStore('chat', () => {
     ensureSession,
     connectSocket,
     submit,
+    interrupt,
     disconnect,
-    setSpeaker,
+    setAvatarControls,
   };
 });

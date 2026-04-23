@@ -11,6 +11,7 @@ case where the LLM server is unreachable so the UI never gets stuck.
 
 from __future__ import annotations
 
+import asyncio
 import json
 import logging
 from collections.abc import AsyncIterator
@@ -111,10 +112,10 @@ class AgentService:
         return self._agent is None
 
     async def stream_reply(self, text: str) -> AsyncIterator[str]:
-        """Yield reply chunks as the LLM streams them.
+        """流式吐出回复 chunk。
 
-        Falls back to a deterministic echo on any transport/LLM error so
-        downstream consumers (TTS, lipsync, UI) keep functioning.
+        - 任何传输错误/LLM 错误都降级为一段错误提示文本，保证下游管线不卡死。
+        - CancelledError 必须原样抛出，M4 的 turn cancel 依赖它。
         """
         if self._agent is None:
             prefix = "（echo stub）你说："
@@ -125,6 +126,8 @@ class AgentService:
         try:
             async for chunk in self._agent.stream(text):
                 yield chunk
+        except asyncio.CancelledError:
+            raise
         except Exception as exc:
             logger.warning("LLM stream failed (%s); echo fallback", exc)
             yield f"（LLM 错误：{exc}）"

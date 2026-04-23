@@ -90,6 +90,26 @@ export class ChatSocket {
     this.send({ type: 'user_message', text });
   }
 
+  /** 请求后端立即中止当前正在生成/播放的 turn（M4 打断）。 */
+  cancel(): void {
+    if (this.ws?.readyState === this.WS.OPEN) {
+      this.send({ type: 'cancel' });
+    }
+  }
+
+  /** 本地 VAD 事件：用户开始说话，后端会把它当作 barge-in 处理（Phase 4 预留）。 */
+  sendSpeechStart(): void {
+    if (this.ws?.readyState === this.WS.OPEN) {
+      this.send({ type: 'speech_start' });
+    }
+  }
+
+  sendSpeechEnd(): void {
+    if (this.ws?.readyState === this.WS.OPEN) {
+      this.send({ type: 'speech_end' });
+    }
+  }
+
   ping(): void {
     if (this.ws?.readyState === this.WS.OPEN) {
       this.send({ type: 'ping' });

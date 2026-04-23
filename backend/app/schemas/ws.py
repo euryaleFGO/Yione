@@ -50,7 +50,25 @@ class ChangeCharacterEvent(_ClientBase):
     character_id: str
 
 
-ClientEvent = UserMessageEvent | CancelEvent | PingEvent | ChangeCharacterEvent
+# M4 起引入：客户端在用户开始/结束说话时通知后端。
+# Phase 1 只用来做日志 + 可选的"收到 speech_start 即取消当前 turn"（打断），
+# 更完整的 VAD/ASR 链路留到 Phase 4（M18/M19）。
+class SpeechStartEvent(_ClientBase):
+    type: Literal["speech_start"] = "speech_start"
+
+
+class SpeechEndEvent(_ClientBase):
+    type: Literal["speech_end"] = "speech_end"
+
+
+ClientEvent = (
+    UserMessageEvent
+    | CancelEvent
+    | PingEvent
+    | ChangeCharacterEvent
+    | SpeechStartEvent
+    | SpeechEndEvent
+)
 
 
 # -------- Server → Client --------
@@ -130,6 +148,10 @@ def parse_client_event(payload: dict[str, object]) -> ClientEvent:
             return PingEvent.model_validate(payload)
         case "change_character":
             return ChangeCharacterEvent.model_validate(payload)
+        case "speech_start":
+            return SpeechStartEvent.model_validate(payload)
+        case "speech_end":
+            return SpeechEndEvent.model_validate(payload)
         case _:
             raise ValueError(f"unknown client event type: {type_!r}")
 
@@ -147,6 +169,8 @@ __all__ = [
     "PingEvent",
     "PongEvent",
     "ServerEvent",
+    "SpeechEndEvent",
+    "SpeechStartEvent",
     "StateEvent",
     "SubtitleEvent",
     "UserMessageEvent",

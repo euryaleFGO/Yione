@@ -64,6 +64,17 @@ export class AudioQueue {
     this.setActive(false);
   }
 
+  /**
+   * 清掉还没播放的段（用于 M4 打断）。不改 stopped，调用方后续还能继续 enqueue
+   * 新 turn 的段；下一个段到来时会重新设置 nextExpectedIdx。
+   * 注意：正在播放中的那一段无法从这里停，需要上层调 stage.stopSpeaking()。
+   */
+  clear(): void {
+    this.pending.clear();
+    this.nextExpectedIdx = null;
+    if (!this.playing) this.setActive(false);
+  }
+
   isActive(): boolean {
     return this.active;
   }

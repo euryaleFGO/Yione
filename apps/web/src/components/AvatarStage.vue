@@ -3,6 +3,7 @@ import {
   AvatarStage as Live2DStage,
   DEFAULT_AVATAR,
   type AvatarConfig,
+  type AvatarControls,
   type StageStatus,
 } from '@webling/live2d-kit';
 import { onBeforeUnmount, onMounted, ref } from 'vue';
@@ -12,7 +13,8 @@ const props = withDefaults(defineProps<{ config?: AvatarConfig }>(), {
 });
 
 const emit = defineEmits<{
-  ready: [speak: (url: string) => Promise<void>];
+  /** Live2D 加载完成，回调外部，交出可以操控模型的句柄集合。 */
+  ready: [controls: AvatarControls];
 }>();
 
 const hostEl = ref<HTMLDivElement | null>(null);
@@ -25,7 +27,12 @@ onMounted(async () => {
     onStatusChange: (s) => {
       status.value = s;
       if (s.kind === 'ready' && stage) {
-        emit('ready', (url) => stage!.speak(url));
+        const st = stage;
+        emit('ready', {
+          speak: (url, opts) => st.speak(url, opts),
+          stopSpeaking: () => st.stopSpeaking(),
+          playMotion: (group, index, priority) => st.playMotion(group, index, priority),
+        });
       }
     },
   });
@@ -37,6 +44,8 @@ onBeforeUnmount(() => stage?.unmount());
 defineExpose({
   speak: (url: string) => stage?.speak(url) ?? Promise.resolve(),
   stopSpeaking: () => stage?.stopSpeaking(),
+  playMotion: (group: string, index?: number, priority?: number) =>
+    stage?.playMotion(group, index, priority) ?? Promise.resolve(),
 });
 </script>
 
