@@ -1,5 +1,5 @@
 <script setup lang="ts">
-import { ref } from 'vue';
+import { onBeforeUnmount, ref } from 'vue';
 
 const props = defineProps<{
   disabled?: boolean;
@@ -9,6 +9,9 @@ const emit = defineEmits<{ send: [text: string] }>();
 
 const text = ref('');
 const composing = ref(false);
+const recording = ref(false);
+
+let recognition: any = null;
 
 function submit() {
   const trimmed = text.value.trim();
@@ -23,6 +26,64 @@ function onKeydown(e: KeyboardEvent) {
     submit();
   }
 }
+
+function toggleVoice() {
+  if (recording.value) {
+    stopVoice();
+  } else {
+    startVoice();
+  }
+}
+
+function startVoice() {
+  const SpeechRecognition = (window as any).SpeechRecognition || (window as any).webkitSpeechRecognition;
+  if (!SpeechRecognition) {
+    alert('当前浏览器不支持语音输入，请使用 Chrome 或 Edge');
+    return;
+  }
+
+  recognition = new SpeechRecognition();
+  recognition.lang = 'zh-CN';
+  recognition.continuous = false;
+  recognition.interimResults = true;
+
+  recognition.onresult = (event: any) => {
+    let final = '';
+    let interim = '';
+    for (let i = 0; i < event.results.length; i++) {
+      if (event.results[i].isFinal) {
+        final += event.results[i][0].transcript;
+      } else {
+        interim += event.results[i][0].transcript;
+      }
+    }
+    text.value = final || interim;
+  };
+
+  recognition.onend = () => {
+    recording.value = false;
+    // 如果有识别结果，自动发送
+    if (text.value.trim()) {
+      submit();
+    }
+  };
+
+  recognition.onerror = () => {
+    recording.value = false;
+  };
+
+  recognition.start();
+  recording.value = true;
+}
+
+function stopVoice() {
+  recognition?.stop();
+  recording.value = false;
+}
+
+onBeforeUnmount(() => {
+  recognition?.abort();
+});
 </script>
 
 <template>
@@ -40,6 +101,22 @@ function onKeydown(e: KeyboardEvent) {
       @compositionstart="composing = true"
       @compositionend="composing = false"
     />
+    <button
+      type="button"
+      :class="[
+        'px-3 py-2 rounded-md text-sm transition-colors',
+        recording
+          ? 'bg-red-500 text-white animate-pulse'
+          : 'bg-slate-100 text-slate-600 hover:bg-slate-200',
+      ]"
+      :title="recording ? '停止录音' : '语音输入'"
+      @click="toggleVoice"
+    >
+      <svg xmlns="http://www.w3.org/2000/svg" class="w-5 h-5" viewBox="0 0 24 24" fill="currentColor">
+        <path d="M12 14c1.66 0 3-1.34 3-3V5c0-1.66-1.34-3-3-3S9 3.34 9 5v6c0 1.66 1.34 3 3 3z"/>
+        <path d="M17 11c0 2.76-2.24 5-5 5s-5-2.24-5-5H5c0 3.53 2.61 6.43 6 6.92V21h2v-3.08c3.39-.49 6-3.39 6-6.92h-2z"/>
+      </svg>
+    </button>
     <button
       type="submit"
       :disabled="disabled || !text.trim()"
