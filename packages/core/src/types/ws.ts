@@ -36,7 +36,14 @@ export type ServerEvent =
   | { type: 'audio_rms'; rms: number; t: number }
   | { type: 'viseme'; open_y: number; form: number }
   | { type: 'error'; code: string; message: string }
-  | { type: 'pong' };
+  | { type: 'pong' }
+  | {
+      type: 'speaker_detected';
+      speaker_id: string;
+      name: string | null;
+      confidence: number;
+      is_new: boolean;
+    };
 
 export function isServerEvent(value: unknown): value is ServerEvent {
   return (

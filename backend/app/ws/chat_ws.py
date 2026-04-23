@@ -52,6 +52,7 @@ from app.services.auth_service import AuthError
 from app.services.motion_map import motion_for
 from app.services.session_service import get_session_service
 from app.services.tts_service import TTSError, get_tts_service
+from app.ws.connections import get_ws_registry
 
 logger = logging.getLogger(__name__)
 
@@ -334,6 +335,8 @@ async def chat_ws(
         return
 
     await ws.accept()
+    registry = get_ws_registry()
+    await registry.register(session_id, ws)
     await _send(ws, StateEvent(value="idle"))
 
     sess = _Session(character_id=info.character_id)
@@ -385,5 +388,6 @@ async def chat_ws(
     except WebSocketDisconnect:
         logger.info("ws disconnected for session %s", session_id)
     finally:
-        # 连接断了也要把正在跑的 turn 停掉
+        # 连接断了也要把正在跑的 turn 停掉 + 从 registry 摘掉
         await sess.cancel_current()
+        await registry.unregister(session_id, ws)

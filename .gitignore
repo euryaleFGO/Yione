@@ -42,3 +42,6 @@ apps/web/public/live2dcubismcore.min.js
 
 # M6：租户/API Key 明文 → 不入库；仓库里只留 tenants.example.json
 backend/app/data/tenants.json
+
+# M16：声纹库包含生物特征向量，不入库
+backend/app/data/speakers.json

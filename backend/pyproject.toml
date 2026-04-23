@@ -27,6 +27,16 @@ dev = [
     "mypy>=1.13.0",
     "types-python-jose>=3.3.0",
 ]
+# M16 声纹识别：Ling SVEngine 需要 funasr/torch/torchaudio 这类重依赖，
+# 没装也能跑（SpeakerService 走降级路径，identify 返回 engine_available=False）。
+sv = [
+    "numpy>=1.26.0",
+    "soundfile>=0.12.0",
+    "funasr>=1.3.1",
+    "torch>=2.0.0",
+    "torchaudio>=2.0.0",
+    "silero-vad>=6.0.0",
+]
 
 [build-system]
 requires = ["setuptools>=68", "wheel"]

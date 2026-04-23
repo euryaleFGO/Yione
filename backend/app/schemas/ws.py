@@ -124,6 +124,15 @@ class PongEvent(_ServerBase):
     type: Literal["pong"] = "pong"
 
 
+# M16：声纹识别命中时推给前端；is_new=True 表示自动注册出的新说话人
+class SpeakerDetectedEvent(_ServerBase):
+    type: Literal["speaker_detected"] = "speaker_detected"
+    speaker_id: str
+    name: str | None = None
+    confidence: float
+    is_new: bool = False
+
+
 ServerEvent = (
     StateEvent
     | SubtitleEvent
@@ -133,6 +142,7 @@ ServerEvent = (
     | VisemeEvent
     | ErrorEvent
     | PongEvent
+    | SpeakerDetectedEvent
 )
 
 
@@ -169,6 +179,7 @@ __all__ = [
     "PingEvent",
     "PongEvent",
     "ServerEvent",
+    "SpeakerDetectedEvent",
     "SpeechEndEvent",
     "SpeechStartEvent",
     "StateEvent",
