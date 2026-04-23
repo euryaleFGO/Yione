@@ -13,7 +13,7 @@ from fastapi.staticfiles import StaticFiles
 from app.config import BACKEND_ROOT, PROJECT_ROOT, get_settings
 from app.db import close_db, init_db
 from app.integrations.ling_adapter import inject_ling_path
-from app.routers import characters, chat, embed, health, metrics, prompts, sessions, speakers, tts
+from app.routers import characters, chat, embed, games, health, metrics, prompts, sessions, speakers, tts
 from app.services.session_service import SessionService, set_session_service
 from app.services.tenant_service import TenantService, get_tenant_service
 from app.ws import chat_ws
@@ -88,6 +88,7 @@ def create_app() -> FastAPI:
     app.include_router(speakers.router, prefix="/api")
     app.include_router(characters.router, prefix="/api")
     app.include_router(prompts.router, prefix="/api")
+    app.include_router(games.router, prefix="/api")
     app.include_router(metrics.router)
     app.include_router(chat_ws.router)
 
