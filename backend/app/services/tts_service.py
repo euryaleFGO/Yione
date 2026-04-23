@@ -72,27 +72,40 @@ class TTSService:
         self,
         text: str,
         *,
-        use_clone: bool = True,
+        use_clone: bool | None = None,
         spk_id: str | None = None,
         client_id: str = "webling",
         first_segment_deadline: float = 120.0,
         dequeue_timeout: float = 10.0,
     ) -> AsyncIterator[AudioSegment]:
-        """Yield wav segments in order as CosyVoice produces them."""
+        """Yield wav segments in order as CosyVoice produces them.
+
+        ``use_clone`` defaults to True iff a concrete ``spk_id`` resolves,
+        otherwise False — on a CosyVoice instance with no registered speakers
+        (see ``GET /tts/speakers``), clone mode would fail silently.
+        """
         text = text.strip()
         if not text:
             return
 
-        effective_spk = spk_id or self._default_spk_id
+        effective_spk = spk_id or self._default_spk_id or None
+        # A "default" / empty spk_id cannot drive cloning; fall back to
+        # zero-shot TTS so we always get audible output.
+        if use_clone is None:
+            use_clone = bool(effective_spk and effective_spk != "default")
+
+        enqueue_body: dict[str, object] = {
+            "text": text,
+            "use_clone": use_clone,
+            "client_id": client_id,
+        }
+        if use_clone and effective_spk:
+            enqueue_body["spk_id"] = effective_spk
+
         try:
             resp = await self._client.post(
                 f"{self._base_url}/tts/enqueue",
-                json={
-                    "text": text,
-                    "use_clone": use_clone,
-                    "spk_id": effective_spk,
-                    "client_id": client_id,
-                },
+                json=enqueue_body,
             )
         except httpx.HTTPError as exc:
             raise TTSError(f"enqueue failed: {exc}") from exc
@@ -103,6 +116,12 @@ class TTSService:
         job_id = data.get("job_id")
         if not job_id:
             raise TTSError(f"enqueue returned no job_id: {data}")
+        logger.debug(
+            "TTS enqueue ok: job=%s spk=%s resp=%s",
+            job_id,
+            effective_spk,
+            data,
+        )
 
         logger.info("TTS job %s text=%s", job_id[:8], text[:40])
 
@@ -121,16 +140,33 @@ class TTSService:
             except httpx.HTTPError as exc:
                 raise TTSError(f"dequeue failed: {exc}") from exc
 
+            # Ling's service.py returns 204 both when the queue is transiently
+            # empty AND when the worker's terminal `None` sentinel is popped.
+            # There is no protocol-level way to distinguish them — on 204 the
+            # server *pops the job* if it was the sentinel, so polling again
+            # yields 404. We match Ling's official client and treat 204 as
+            # terminal. If no audio segments were produced, surface a clear
+            # diagnostic (usually: spk_id/use_clone combo rejected silently).
             if seg_resp.status_code == 204:
-                # Empty or done. Ling's service doesn't distinguish; after
-                # receiving at least one segment, 204 is the terminator.
-                if seg_idx > 0:
-                    return
-                # Still waiting for first segment; keep polling.
+                if seg_idx == 0:
+                    raise TTSError(
+                        "server finished with 0 audio segments — check "
+                        "spk_id / use_clone and CosyVoice logs"
+                    )
+                return
+            if seg_resp.status_code == 202:
+                # Some CosyVoice builds use 202 = "pending, keep polling".
                 continue
             if seg_resp.status_code == 409:
                 detail = seg_resp.text[:200]
                 raise TTSError(f"job failed: {detail}")
+            if seg_resp.status_code == 404:
+                # Job popped under us (multi-worker deploy w/o sticky routing,
+                # or previous 204 already terminated). Nothing more to do.
+                raise TTSError(
+                    f"job {job_id[:8]} disappeared mid-stream — multi-worker "
+                    "upstream or already terminated"
+                )
             if seg_resp.status_code != 200:
                 raise TTSError(f"dequeue status {seg_resp.status_code}")
 

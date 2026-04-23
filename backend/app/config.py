@@ -42,7 +42,7 @@ class Settings(BaseSettings):
 
     # -- TTS --
     tts_base_url: str = Field(default="http://192.168.251.56:5001", alias="TTS_BASE_URL")
-    tts_default_spk_id: str = Field(default="default", alias="TTS_DEFAULT_SPK_ID")
+    tts_default_spk_id: str = Field(default="", alias="TTS_DEFAULT_SPK_ID")
     tts_cache_dir: str = Field(default="backend/app/static/tts", alias="TTS_CACHE_DIR")
     tts_cache_ttl_seconds: int = Field(default=3600, alias="TTS_CACHE_TTL_SECONDS")
 
