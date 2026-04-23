@@ -50,5 +50,17 @@ def test_ws_user_message_echo(client: TestClient) -> None:
         assert got_final, "never saw is_final subtitle"
         assert "ping" in final_text
 
-        idle = ws.receive_json()
-        assert idle == {"type": "state", "value": "idle"}
+        # After subtitle-final the server transitions to "speaking", then
+        # attempts TTS. In CI / no-CosyVoice envs the attempt errors out
+        # (captured as an error event) and state returns to idle.
+        states: list[str] = []
+        saw_idle = False
+        for _ in range(10):
+            msg = ws.receive_json()
+            if msg["type"] == "state":
+                states.append(msg["value"])
+                if msg["value"] == "idle":
+                    saw_idle = True
+                    break
+        assert "speaking" in states
+        assert saw_idle

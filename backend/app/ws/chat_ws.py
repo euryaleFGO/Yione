@@ -1,6 +1,8 @@
-"""Chat WebSocket endpoint (M1).
+"""Chat WebSocket endpoint.
 
-Accepts a query-string ``?session_id=...`` for now; full JWT auth lands in M6.
+Accepts ``?session_id=...`` for now; full JWT auth lands in M6.
+After a subtitle-final event the server optionally triggers a TTS stream
+and emits ``audio`` events as wav segments become available (M3).
 """
 
 from __future__ import annotations
@@ -10,6 +12,7 @@ import logging
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
 from app.schemas.ws import (
+    AudioEvent,
     ErrorEvent,
     PongEvent,
     ServerEvent,
@@ -19,6 +22,7 @@ from app.schemas.ws import (
 )
 from app.services.agent_service import get_agent_service
 from app.services.session_service import get_session_service
+from app.services.tts_service import TTSError, get_tts_service
 
 logger = logging.getLogger(__name__)
 
@@ -27,6 +31,28 @@ router = APIRouter()
 
 async def _send(ws: WebSocket, event: ServerEvent) -> None:
     await ws.send_json(event.model_dump(mode="json"))
+
+
+async def _speak(ws: WebSocket, text: str) -> None:
+    """Drive a TTS stream, emitting ``audio`` events per segment.
+
+    Errors (CosyVoice unreachable, job failed) are reported via ``error``
+    events but do not tear down the WS — text chat stays usable.
+    """
+    tts = get_tts_service()
+    try:
+        async for seg in tts.synth_stream(text):
+            await _send(
+                ws,
+                AudioEvent(
+                    url=seg.url,
+                    segment_idx=seg.segment_idx,
+                    sample_rate=seg.sample_rate,
+                ),
+            )
+    except TTSError as exc:
+        logger.warning("TTS failed: %s", exc)
+        await _send(ws, ErrorEvent(code="tts_failed", message=str(exc)))
 
 
 @router.websocket("/ws/chat")
@@ -66,14 +92,13 @@ async def chat_ws(ws: WebSocket, session_id: str = Query(...)) -> None:
                             emotion="neutral",
                         ),
                     )
+                final_text = "".join(buffer)
                 await _send(
                     ws,
-                    SubtitleEvent(
-                        text="".join(buffer),
-                        is_final=True,
-                        emotion="neutral",
-                    ),
+                    SubtitleEvent(text=final_text, is_final=True, emotion="neutral"),
                 )
+                await _send(ws, StateEvent(value="speaking"))
+                await _speak(ws, final_text)
                 await _send(ws, StateEvent(value="idle"))
                 continue
 

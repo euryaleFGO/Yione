@@ -12,6 +12,7 @@
 
 import { DEFAULT_AVATAR, type AvatarConfig } from './avatar-config.js';
 import { ensureCubismCore, isCubismCoreLoaded } from './cubism-core.js';
+import { createLipSync, createNoopLipSync, type LipSyncDriver } from './lipsync.js';
 
 type PixiModule = typeof import('pixi.js');
 type Live2DBindings = typeof import('pixi-live2d-display-lipsyncpatch/cubism4');
@@ -71,6 +72,7 @@ export class AvatarStage {
   private host: HTMLElement | null = null;
   private config: AvatarConfig = DEFAULT_AVATAR;
   private status: StageStatus = { kind: 'idle' };
+  private lipSync: LipSyncDriver = createNoopLipSync();
 
   constructor(private readonly cb: StageCallbacks = {}) {}
 
@@ -110,6 +112,7 @@ export class AvatarStage {
 
       app.stage.addChild(model as unknown as Parameters<typeof app.stage.addChild>[0]);
       this.fitModel();
+      this.lipSync = createLipSync(model as unknown as Parameters<typeof createLipSync>[0]);
 
       // Re-fit on container resize. `resizeTo` on PIXI polls via ticker and
       // can race with user events; we reposition ourselves against CSS pixels
@@ -127,9 +130,20 @@ export class AvatarStage {
     return this.status;
   }
 
+  /** Feed audio RMS to drive the mouth-open parameter. */
+  pushRms(rms: number): void {
+    this.lipSync.pushRms(rms);
+  }
+
+  resetLipSync(): void {
+    this.lipSync.reset();
+  }
+
   unmount(): void {
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
+    this.lipSync.dispose();
+    this.lipSync = createNoopLipSync();
     this.model = null;
     this.host = null;
     const app = this.appAny as { destroy?: (a?: boolean, b?: unknown) => void } | null;

@@ -1,4 +1,4 @@
-import type { Message, SessionSummary } from '@webling/core';
+import { AudioQueue, type Message, type SessionSummary } from '@webling/core';
 import { defineStore } from 'pinia';
 import { ref, shallowRef } from 'vue';
 
@@ -18,9 +18,23 @@ export const useChatStore = defineStore('chat', () => {
   const connection = ref<ConnectionState>('idle');
   const agentState = ref<AgentState>('idle');
   const lastError = ref<string | null>(null);
+  /** Per-frame RMS sample from the current TTS playback; 0 when silent. */
+  const rms = ref(0);
 
   let socket: ReturnType<typeof createChatSocket> | null = null;
   let streamingMessageId: string | null = null;
+
+  const audioQueue = new AudioQueue({
+    onRms: (v) => {
+      rms.value = v;
+    },
+    onActivityChange: (active) => {
+      if (!active) rms.value = 0;
+    },
+    onError: (err) => {
+      lastError.value = `audio: ${err.message}`;
+    },
+  });
 
   async function ensureSession(characterId = 'ling'): Promise<SessionSummary> {
     if (session.value) return session.value;
@@ -55,6 +69,13 @@ export const useChatStore = defineStore('chat', () => {
           break;
         case 'subtitle':
           upsertStreamingAssistantMessage(ev.text, ev.is_final, ev.emotion);
+          break;
+        case 'audio':
+          audioQueue.enqueue({
+            url: ev.url,
+            segmentIdx: ev.segment_idx,
+            sampleRate: ev.sample_rate,
+          });
           break;
         case 'error':
           lastError.value = `${ev.code}: ${ev.message}`;
@@ -99,6 +120,9 @@ export const useChatStore = defineStore('chat', () => {
   async function sendViaWs(text: string): Promise<void> {
     await connectSocket();
     if (!socket) return;
+    // Kick the AudioContext alive from this user-gesture turn so the first
+    // `audio` event can start playing without the autoplay block.
+    void audioQueue.ensureContext();
     messages.value.push({
       id: uid('m'),
       role: 'user',
@@ -142,10 +166,11 @@ export const useChatStore = defineStore('chat', () => {
     }
   }
 
-  function disconnect(): void {
+  async function disconnect(): Promise<void> {
     socket?.close();
     socket = null;
     connection.value = 'closed';
+    await audioQueue.destroy();
   }
 
   return {
@@ -155,6 +180,7 @@ export const useChatStore = defineStore('chat', () => {
     connection,
     agentState,
     lastError,
+    rms,
     ensureSession,
     connectSocket,
     submit,

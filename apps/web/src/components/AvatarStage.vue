@@ -22,6 +22,11 @@ onMounted(async () => {
 });
 
 onBeforeUnmount(() => stage?.unmount());
+
+defineExpose({
+  pushRms: (rms: number) => stage?.pushRms(rms),
+  resetLipSync: () => stage?.resetLipSync(),
+});
 </script>
 
 <template>
