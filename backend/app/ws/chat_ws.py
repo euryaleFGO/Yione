@@ -17,6 +17,8 @@ from __future__ import annotations
 import asyncio
 import logging
 import re
+import time
+from dataclasses import dataclass
 
 from fastapi import APIRouter, Query, WebSocket, WebSocketDisconnect
 
@@ -43,49 +45,75 @@ async def _send(ws: WebSocket, event: ServerEvent) -> None:
 
 
 _SENTENCE_END = re.compile(r"[。！？.!?\n]")
-_MIN_SENTENCE_CHARS = 4  # avoid firing TTS on fragments like "好。"
+# 让短句也能走 TTS，比如 "你好！"；过滤掉 "好"/"。" 这种个别字符的噪声
+_MIN_SENTENCE_CHARS = 2
+# 若 LLM 已经出了 N 个字还没碰到句号，在逗号/分号处也提前切一刀，避免长串积压
+_SOFT_BREAK = re.compile(r"[，、；,;]")
+_SOFT_BREAK_AFTER = 18
 
 
 def _pop_sentence(buf: str) -> tuple[str | None, str]:
     """Find the first complete sentence in *buf*.
 
-    Returns ``(sentence, remainder)``. If no sentence has terminated yet
-    (or the pending sentence is shorter than ``_MIN_SENTENCE_CHARS`` when
-    trimmed), returns ``(None, buf)`` so the caller keeps buffering.
+    Hard break on ``。！？.!?\\n``; if the buffer grows past
+    ``_SOFT_BREAK_AFTER`` chars without one, soft-break on a comma instead
+    so the user doesn't wait for a whole long sentence.
     """
     match = _SENTENCE_END.search(buf)
-    if not match:
-        return None, buf
-    end = match.end()
-    sentence = buf[:end]
-    if len(sentence.strip()) < _MIN_SENTENCE_CHARS:
-        return None, buf
-    return sentence, buf[end:]
+    if match is not None:
+        end = match.end()
+        sentence = buf[:end]
+        if len(sentence.strip()) < _MIN_SENTENCE_CHARS:
+            return None, buf
+        return sentence, buf[end:]
+
+    if len(buf) >= _SOFT_BREAK_AFTER:
+        soft = _SOFT_BREAK.search(buf)
+        if soft is not None:
+            end = soft.end()
+            sentence = buf[:end]
+            if len(sentence.strip()) >= _MIN_SENTENCE_CHARS:
+                return sentence, buf[end:]
+    return None, buf
+
+
+@dataclass
+class _TurnState:
+    """Shared between the LLM loop and the TTS worker for one user turn."""
+
+    t0: float
+    next_idx: int = 0
 
 
 async def _tts_worker(
     ws: WebSocket,
     pending: asyncio.Queue[str | None],
-    state: dict[str, int],
+    state: _TurnState,
 ) -> None:
-    """Drain *pending* sentences → TTS → AudioEvent. Sentinel ``None`` quits.
-
-    *state* is a single-slot dict used to share the running segment counter
-    with the caller (simpler than a class for M3.5).
-    """
+    """Drain *pending* sentences → TTS → AudioEvent. Sentinel ``None`` quits."""
     tts = get_tts_service()
     while True:
         sentence = await pending.get()
         if sentence is None:
             return
         try:
+            first = True
             async for seg in tts.synth_stream(sentence):
-                state["next_idx"] += 1
+                state.next_idx += 1
+                if first:
+                    logger.info(
+                        "[%.2fs] TTS first seg for %r → idx=%d url=%s",
+                        time.monotonic() - state.t0,
+                        sentence[:20],
+                        state.next_idx,
+                        seg.url,
+                    )
+                    first = False
                 await _send(
                     ws,
                     AudioEvent(
                         url=seg.url,
-                        segment_idx=state["next_idx"],
+                        segment_idx=state.next_idx,
                         sample_rate=seg.sample_rate,
                     ),
                 )
@@ -96,17 +124,24 @@ async def _tts_worker(
 
 async def _handle_user_message(ws: WebSocket, user_text: str) -> None:
     agent = get_agent_service()
+    t0 = time.monotonic()
+    logger.info("[0.00s] user_message received: %r", user_text[:40])
 
     await _send(ws, StateEvent(value="processing"))
 
     pending: asyncio.Queue[str | None] = asyncio.Queue()
-    counter = {"next_idx": 0}
-    worker = asyncio.create_task(_tts_worker(ws, pending, counter))
+    state = _TurnState(t0=t0)
+    worker = asyncio.create_task(_tts_worker(ws, pending, state))
 
     buffer = ""      # rolling LLM output (all of it, for final subtitle)
     unspoken = ""    # text accumulated but not yet sent to TTS
+    first_chunk = True
+    sentences_queued = 0
 
     async for chunk in agent.stream_reply(user_text):
+        if first_chunk:
+            logger.info("[%.2fs] LLM first chunk (%r…)", time.monotonic() - t0, chunk[:20])
+            first_chunk = False
         buffer += chunk
         unspoken += chunk
         await _send(
@@ -117,16 +152,32 @@ async def _handle_user_message(ws: WebSocket, user_text: str) -> None:
             sentence, unspoken = _pop_sentence(unspoken)
             if sentence is None:
                 break
+            sentences_queued += 1
+            logger.info(
+                "[%.2fs] queue sentence #%d: %r",
+                time.monotonic() - t0,
+                sentences_queued,
+                sentence[:30],
+            )
             await pending.put(sentence)
+
+    logger.info(
+        "[%.2fs] LLM stream done, buffer=%d chars, unspoken=%r",
+        time.monotonic() - t0,
+        len(buffer),
+        unspoken[:40],
+    )
 
     # Final subtitle + flush remainder to TTS
     await _send(ws, SubtitleEvent(text=buffer, is_final=True, emotion="neutral"))
     if unspoken.strip():
+        sentences_queued += 1
         await pending.put(unspoken)
 
     await pending.put(None)  # stop the worker after the last sentence
     await _send(ws, StateEvent(value="speaking"))
     await worker  # let it finish draining
+    logger.info("[%.2fs] all segments emitted", time.monotonic() - t0)
     await _send(ws, StateEvent(value="idle"))
 
 
