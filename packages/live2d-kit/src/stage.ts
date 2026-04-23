@@ -161,6 +161,7 @@ export class AvatarStage {
           speak: (url: string, opts?: SpeakOptions) => this.speak(url, opts),
           playMotion: (group: string, index?: number, priority?: number) =>
             this.playMotion(group, index, priority),
+          setExpression: (name: string) => this.setExpression(name),
           probe: () => {
             const im = (model as unknown as {
               internalModel?: {
