@@ -67,21 +67,19 @@ class CosyvoiceRealTimeTTS:
             model_path: CosyVoice2 模型路径
             reference_audio_path: 参考音频路径（用于语音克隆），可选
             max_queue: 音频队列最大长度
-            load_jit: 是否加载 JIT 模型（默认 False，4GB 显卡不支持）
-            load_trt: 是否加载 TensorRT 模型（默认 False，4GB 显卡不支持）
+            load_jit: 是否加载 JIT 编译模型（需 model_dir 里有 flow.encoder.{fp16|fp32}.zip）
+            load_trt: 是否加载 TensorRT 引擎（需要预编译的 .plan 文件，首次编译 10-30min）
         """
         # 延迟导入 CosyVoice2
         from cosyvoice.cli.cosyvoice import CosyVoice2
         from cosyvoice.utils.file_utils import load_wav
 
-        # 4GB 显卡强制关闭 JIT 和 TRT
-        if load_jit or load_trt:
-            print(f"[WARN] 4GB 显卡不支持 JIT/TRT 优化，已强制关闭")
-            load_jit = False
-            load_trt = False
-        
-        print(f"加载模型中... (JIT: 禁用, TRT: 禁用, FP16: 启用)")
-        self.cosyvoice = CosyVoice2(model_path, load_jit=False, load_trt=False, fp16=True)
+        # A6000 级别的卡显存足够，默认开 JIT；老家 4GB 卡的硬下限保留不动（自行传 load_jit=False）
+        print(
+            f"加载模型中... (JIT: {'启用' if load_jit else '禁用'}, "
+            f"TRT: {'启用' if load_trt else '禁用'}, FP16: 启用)"
+        )
+        self.cosyvoice = CosyVoice2(model_path, load_jit=load_jit, load_trt=load_trt, fp16=True)
         self.load_wav_func = load_wav
         self.sample_rate = self.cosyvoice.sample_rate
         self.ref_wav = None

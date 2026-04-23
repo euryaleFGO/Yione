@@ -43,29 +43,28 @@ tts_engine = None
 DEFAULT_MODEL_PATH = os.getenv('COSYVOICE_MODEL_PATH', os.path.join(BASE_DIR, '..', '..', '..', '..', 'Model', 'CosyVoice2-0.5B'))
 DEFAULT_REF_AUDIO = os.getenv('COSYVOICE_REF_AUDIO', os.path.join(BASE_DIR, '..', '..', '..', '..', 'Model', 'zjj.wav'))
 
-def init_tts(model_path: str = None, ref_audio: str = None):
+def init_tts(model_path: str = None, ref_audio: str = None, load_jit: bool = False, load_trt: bool = False):
     """初始化 TTS 引擎（在主线程中）"""
     global tts_engine
     if tts_engine is not None:
         return True
-    
+
     try:
         print("[TTS服务] 正在初始化 TTS 引擎...")
-        
+
         # 使用提供的路径或默认路径
         model_path = model_path or DEFAULT_MODEL_PATH
         ref_audio = ref_audio or DEFAULT_REF_AUDIO
-        
+
         if not os.path.exists(model_path):
             print(f"[TTS服务] 错误：模型路径不存在：{model_path}")
             return False
-        
+
         if not os.path.exists(ref_audio):
             print(f"[TTS服务] 警告：参考音频不存在：{ref_audio}，将使用默认音色")
             ref_audio = None
-        
-        # 4GB 显卡强制关闭 JIT 和 TRT
-        tts_engine = CosyvoiceRealTimeTTS(model_path, ref_audio, load_jit=False, load_trt=False)
+
+        tts_engine = CosyvoiceRealTimeTTS(model_path, ref_audio, load_jit=load_jit, load_trt=load_trt)
         print("[TTS服务] TTS 引擎初始化成功")
         
         # 加载已保存的说话人信息（如果存在）
@@ -411,6 +410,10 @@ if __name__ == '__main__':
     parser.add_argument('--port', type=int, default=5001, help='服务端口')
     parser.add_argument('--model', default=None, help='模型路径')
     parser.add_argument('--ref-audio', default=None, help='参考音频路径')
+    parser.add_argument('--load-jit', action='store_true',
+                        help='启用 flow encoder JIT 加速（需 model_dir 里有 flow.encoder.*.zip）')
+    parser.add_argument('--load-trt', action='store_true',
+                        help='启用 flow decoder TensorRT 加速（需预编译 flow.decoder.estimator.*.mygpu.plan）')
     args = parser.parse_args()
     
     print("=" * 60)
@@ -422,7 +425,7 @@ if __name__ == '__main__':
     ref_audio = args.ref_audio or os.getenv('COSYVOICE_REF_AUDIO')
     
     # 在主线程中初始化 TTS
-    if not init_tts(model_path, ref_audio):
+    if not init_tts(model_path, ref_audio, load_jit=args.load_jit, load_trt=args.load_trt):
         print("[TTS服务] 警告：TTS 初始化失败，将在首次请求时重试")
     
     port = args.port or int(os.getenv('TTS_SERVICE_PORT', 5001))
