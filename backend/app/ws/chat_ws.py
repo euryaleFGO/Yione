@@ -188,9 +188,10 @@ async def _maybe_emit_motion(
     if emotion != "neutral":
         motion = motion_for(emotion, character_id=character_id)
         await _send(ws, MotionEvent(name=motion))
-        logger.info("motion %s + expression %s triggered by emotion=%s", motion, expression, emotion)
+        # 升到 warning 级别，默认 uvicorn 也能看见（Python logging 默认 WARNING 起步）
+        logger.warning("[EMOTION] motion=%s + expression=%s (emotion=%s)", motion, expression, emotion)
     else:
-        logger.info("expression %s triggered by emotion=neutral (no motion)", expression)
+        logger.warning("[EMOTION] expression=%s (emotion=neutral, no motion)", expression)
     state.last_motion_emotion = emotion
 
 
