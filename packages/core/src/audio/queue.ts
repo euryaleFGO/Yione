@@ -75,7 +75,15 @@ export class AudioQueue {
 
   enqueue(segment: QueuedSegment): void {
     if (this.stopped) return;
+    // First segment of a new stream dictates the base index. Also reset when
+    // idle — see note in drain() for why.
     if (this.nextExpectedIdx === null) this.nextExpectedIdx = segment.segmentIdx;
+    // Defensive: if a segment arrives with an idx smaller than what we're
+    // waiting on (e.g. server restarted segment numbering mid-flight), treat
+    // it as the head of a new stream.
+    if (segment.segmentIdx < this.nextExpectedIdx && !this.playing && this.pending.size === 0) {
+      this.nextExpectedIdx = segment.segmentIdx;
+    }
     if (this.loading.has(segment.segmentIdx)) return;
     this.loading.add(segment.segmentIdx);
     void this.fetchAndDecode(segment);
@@ -139,8 +147,12 @@ export class AudioQueue {
     } finally {
       this.playing = false;
       this.nextExpectedIdx = (this.nextExpectedIdx ?? 0) + 1;
-      // Tail: if no more buffers queued and none loading, transition idle.
+      // Tail: if no more buffers queued and none loading, transition idle and
+      // forget the running index — each TTS job restarts segment_idx from 1,
+      // so holding a stale "expected next" across messages would strand the
+      // fresh job's first segment in `pending` forever.
       if (this.pending.size === 0 && this.loading.size === 0) {
+        this.nextExpectedIdx = null;
         this.setActive(false);
       } else {
         void this.drain();
