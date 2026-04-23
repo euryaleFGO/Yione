@@ -86,6 +86,7 @@ export class AudioQueue {
     if (!next) return;
     this.pending.delete(this.nextExpectedIdx);
 
+    const playedIdx = next.segmentIdx;
     this.playing = true;
     this.setActive(true);
     try {
@@ -93,13 +94,23 @@ export class AudioQueue {
     } catch (err) {
       this.opts.onError?.(err instanceof Error ? err : new Error(String(err)), {
         url: next.url,
-        idx: next.segmentIdx,
+        idx: playedIdx,
       });
     } finally {
       this.playing = false;
-      this.nextExpectedIdx = (this.nextExpectedIdx ?? 0) + 1;
+      // 打断场景：clear() 在 await 期间把 nextExpectedIdx 置 null，随后新 turn 的
+      // enqueue() 又把它设成新 base。此时 `nextExpectedIdx !== playedIdx` —— 绝不
+      // 能盲目 +1 覆盖新 base（那会让新段的 idx 永远拿不到）。只有"没被 clear 过"
+      // 的情形（当前仍 == playedIdx）才推进到 playedIdx + 1。
+      if (this.nextExpectedIdx === playedIdx) {
+        this.nextExpectedIdx = playedIdx + 1;
+      }
       if (this.pending.size === 0) {
-        this.nextExpectedIdx = null;
+        // 自然耗尽：重置 base 等下一个 turn；clear() 路径下 nextExpectedIdx 已是
+        // null 或新 base，分别保留不动
+        if (this.nextExpectedIdx === playedIdx + 1) {
+          this.nextExpectedIdx = null;
+        }
         this.setActive(false);
       } else {
         void this.drain();

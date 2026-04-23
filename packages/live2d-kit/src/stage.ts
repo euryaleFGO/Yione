@@ -211,16 +211,23 @@ export class AvatarStage {
    * don't overwrite the mouth shape. Returns a Promise that resolves when
    * playback finishes.
    */
+  private activeSpeakResolver: (() => void) | null = null;
+
   async speak(soundUrl: string, opts: SpeakOptions = {}): Promise<void> {
     const model = this.model;
     if (!model?.speak) return;
     await new Promise<void>((resolve) => {
+      const settle = () => {
+        if (this.activeSpeakResolver === settle) this.activeSpeakResolver = null;
+        resolve();
+      };
+      this.activeSpeakResolver = settle;
       void model.speak!(soundUrl, {
         volume: opts.volume ?? 1,
         crossOrigin: opts.crossOrigin,
         resetExpression: false,
-        onFinish: () => resolve(),
-        onError: () => resolve(),
+        onFinish: settle,
+        onError: settle,
       });
     });
   }
@@ -229,6 +236,11 @@ export class AvatarStage {
   stopSpeaking(): void {
     this.stopPlaceholderMouth();
     this.model?.stopSpeaking?.();
+    // fork 的 stopSpeaking 不保证触发 onFinish/onError；显式把 speak() Promise 立刻
+    // resolve，否则上游 AudioQueue 的 playing 标记卡死 → 新 turn 的音频永远不播
+    const resolver = this.activeSpeakResolver;
+    this.activeSpeakResolver = null;
+    resolver?.();
   }
 
   /**
