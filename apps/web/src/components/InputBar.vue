@@ -31,6 +31,11 @@ let asrWs: WebSocket | null = null;
 
 // M34 循环内用于判重：每句 utterance 只发一次 speech_start
 let bargedInThisUtterance = false;
+// FunASR 偶尔对同一 utterance 重复发 2pass-offline（尾音余振再次触发 VAD），
+// 导致同一句提交两次。用"文本 + 时间窗"去重；窗口取 2s，足够覆盖重复且不会
+// 误判快速连续两句"嗯嗯"。
+let lastSubmittedSentence: { text: string; at: number } | null = null;
+const DEDUP_WINDOW_MS = 2000;
 // 5 分钟静默自动退出循环
 let silenceTimer: ReturnType<typeof setTimeout> | null = null;
 const SILENCE_TIMEOUT_MS = 5 * 60 * 1000;
@@ -93,8 +98,22 @@ async function toggleDialog() {
   }
 }
 
+// 一个 46 字节的静音 wav，用于 iOS Safari autoplay unlock——在用户 gesture
+// 里 play() 一次，之后 Live2D fork new Audio(ttsUrl) 才能正常出声
+const SILENT_WAV_DATAURL =
+  'data:audio/wav;base64,UklGRjIAAABXQVZFZm10IBIAAAABAAEAQB8AAEAfAAABAAgAAABmYWN0BAAAAAAAAABkYXRhAAAAAA==';
+
 async function startDialog() {
   dialogError.value = null;
+
+  // iOS/移动端 autoplay unlock：在用户点"开始对话"的 gesture 上下文里
+  // 播一条静音，把整页的 Audio 子系统标记为 unlocked，后续 Live2D fork 创建
+  // 新 HTMLAudioElement 播 TTS 才不会被 Safari 的自动播放策略静默屏蔽。
+  try {
+    const warmup = new Audio(SILENT_WAV_DATAURL);
+    warmup.muted = true;
+    await warmup.play().catch(() => { /* 桌面浏览器会忽略静音 play；不影响 */ });
+  } catch { /* ignore */ }
 
   let stream: MediaStream;
   try {
@@ -167,8 +186,15 @@ async function startDialog() {
       // 一句完成 → 提交并重置打断标记；同时清空 text 供下一句
       const sentence = (data.text as string | undefined)?.trim() ?? '';
       if (sentence) {
-        text.value = sentence;
-        submit();
+        const now = Date.now();
+        const last = lastSubmittedSentence;
+        if (last && last.text === sentence && now - last.at < DEDUP_WINDOW_MS) {
+          // FunASR 重复发了同一句 offline；忽略第二份
+        } else {
+          lastSubmittedSentence = { text: sentence, at: now };
+          text.value = sentence;
+          submit();
+        }
       }
       bargedInThisUtterance = false;
     } else if (data.type === 'asr_result') {
