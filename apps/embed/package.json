@@ -2,12 +2,30 @@
   "name": "@webling/embed",
   "version": "0.0.1",
   "private": true,
+  "description": "webLing 嵌入 SDK —— Script tag / <web-ling> Custom Element / iframe 三形态。iframe 宿主是完整 Vue 应用（Live2D + TTS + 情绪 + 声纹）。",
+  "type": "module",
   "scripts": {
-    "build": "ENTRY=index vite build && ENTRY=web-component vite build",
-    "dev": "vite build --watch"
+    "build": "pnpm run build:app && pnpm run build:lib && pnpm run build:copy-assets",
+    "build:app": "vite build --config vite.app.config.ts",
+    "build:lib": "ENTRY=index vite build --config vite.lib.config.ts && ENTRY=web-component vite build --config vite.lib.config.ts",
+    "build:copy-assets": "node scripts/copy-web-public.mjs",
+    "dev": "vite --config vite.app.config.ts",
+    "typecheck": "vue-tsc --noEmit -p tsconfig.app.json && tsc --noEmit -p tsconfig.lib.json"
+  },
+  "dependencies": {
+    "@webling/core": "workspace:*",
+    "@webling/live2d-kit": "workspace:*",
+    "pinia": "^2.2.6",
+    "vue": "^3.5.32"
   },
   "devDependencies": {
+    "@vitejs/plugin-vue": "^5.2.1",
+    "@vue/tsconfig": "^0.7.0",
+    "autoprefixer": "^10.4.20",
+    "postcss": "^8.5.1",
+    "tailwindcss": "^3.4.17",
+    "typescript": "^5.6.3",
     "vite": "^6.0.0",
-    "typescript": "^5.0.0"
+    "vue-tsc": "^2.2.0"
   }
 }

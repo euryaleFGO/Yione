@@ -1,0 +1,25 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0, viewport-fit=cover" />
+    <title>webLing</title>
+    <!-- Live2D Cubism Core：build:copy-assets 会把这个文件从 web/public 拷过来 -->
+    <script src="/embed/live2dcubismcore.min.js"></script>
+    <!-- iframe 独立部署时的回落：等 SDK 4.x 加载失败再走官方 CDN -->
+    <script>
+      (function () {
+        if (!window.Live2DCubismCore) {
+          var s = document.createElement('script');
+          s.src = 'live2dcubismcore.min.js';
+          s.async = false;
+          document.head.appendChild(s);
+        }
+      })();
+    </script>
+  </head>
+  <body>
+    <div id="app"></div>
+    <script type="module" src="/src/main.ts"></script>
+  </body>
+</html>

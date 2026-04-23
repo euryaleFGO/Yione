@@ -1,0 +1,145 @@
+<!doctype html>
+<html lang="zh-CN">
+  <head>
+    <meta charset="UTF-8" />
+    <meta name="viewport" content="width=device-width, initial-scale=1.0" />
+    <title>webLing 嵌入 SDK · 接入演示</title>
+    <style>
+      * { box-sizing: border-box; }
+      body {
+        margin: 0; padding: 0;
+        font-family: system-ui, -apple-system, 'Segoe UI', 'PingFang SC', sans-serif;
+        color: #0f172a; background: #f8fafc;
+      }
+      header {
+        padding: 32px 24px; background: linear-gradient(135deg, #6366f1 0%, #8b5cf6 100%);
+        color: white;
+      }
+      header h1 { margin: 0 0 8px; font-size: 24px; }
+      header p { margin: 0; opacity: 0.85; font-size: 14px; }
+      main { max-width: 960px; margin: 0 auto; padding: 32px 24px 96px; }
+      section {
+        background: white; border: 1px solid #e2e8f0; border-radius: 12px;
+        padding: 20px 24px; margin-bottom: 16px;
+      }
+      section h2 { margin: 0 0 12px; font-size: 16px; color: #334155; }
+      pre {
+        background: #0f172a; color: #e2e8f0; padding: 14px 16px;
+        border-radius: 8px; overflow-x: auto; font-size: 13px; line-height: 1.5;
+        margin: 12px 0 0;
+      }
+      code { font-family: 'SF Mono', Consolas, Monaco, monospace; }
+      .btn {
+        display: inline-block; padding: 8px 16px; background: #6366f1; color: white;
+        border: none; border-radius: 6px; cursor: pointer; font-size: 14px; margin-top: 8px;
+      }
+      .btn:hover { background: #4f46e5; }
+      .row { display: flex; gap: 8px; flex-wrap: wrap; align-items: center; margin-top: 8px; }
+      .row label { font-size: 13px; color: #64748b; }
+      .row input {
+        padding: 6px 10px; border: 1px solid #cbd5e1; border-radius: 6px; font-size: 13px;
+      }
+      .inline-slot {
+        height: 480px; width: 100%; max-width: 400px;
+        border: 1px solid #e2e8f0; border-radius: 12px; overflow: hidden;
+        margin-top: 12px;
+      }
+      .hint {
+        font-size: 12px; color: #64748b; margin-top: 8px; line-height: 1.6;
+      }
+    </style>
+  </head>
+  <body>
+    <header>
+      <h1>webLing 嵌入 SDK · 接入演示</h1>
+      <p>这个页面本身就是"第三方网站"。下面三个 section 展示三种接入方式。</p>
+    </header>
+
+    <main>
+      <section>
+        <h2>1 · Script tag（最常用，一段脚本接入）</h2>
+        <p style="font-size: 14px; color: #475569; margin: 0;">
+          本页右下角那个紫色按钮就是它 —— 点击展开会弹出 Live2D 玲和聊天面板。
+        </p>
+        <pre><code>&lt;script
+  src="https://&lt;webling-host&gt;/embed/embed.js"
+  data-api-key="demo"
+  data-character-id="ling"
+  data-position="bottom-right"
+  async defer
+&gt;&lt;/script&gt;</code></pre>
+
+        <div class="hint">
+          本演示页直接 <code>&lt;script src="/embed/embed.js" data-api-key="demo"&gt;</code>，用
+          backend dev 模式的回退 tenant（任意 api_key 都通过，方便本地调试）。
+        </div>
+
+        <div class="row">
+          <button class="btn" onclick="window.WeblingEmbed && window.WeblingEmbed.mount({apiKey:'demo',openByDefault:true,position:'bottom-left'}).iframe">
+            程序化挂第二个实例（左下角）
+          </button>
+        </div>
+      </section>
+
+      <section>
+        <h2>2 · &lt;web-ling&gt; Custom Element（声明式，同样 CDN）</h2>
+        <p style="font-size: 14px; color: #475569; margin: 0;">
+          加载 <code>web-component.js</code> 后，写一个 HTML 标签就能嵌入。加
+          <code>embedded</code> 属性会把 iframe 直接渲染在自身位置（下方示例）。
+        </p>
+        <pre><code>&lt;script src="https://&lt;webling-host&gt;/embed/web-component.js" defer&gt;&lt;/script&gt;
+&lt;web-ling
+  api-key="demo"
+  character-id="ling"
+  base-url="https://&lt;webling-host&gt;"
+  embedded
+&gt;&lt;/web-ling&gt;</code></pre>
+
+        <div class="inline-slot">
+          <!-- embedded 模式：iframe 贴在宿主提供的容器内 -->
+          <web-ling api-key="demo" character-id="ling" embedded></web-ling>
+        </div>
+        <div class="hint">
+          如果不加 <code>embedded</code>，行为等同于 Script tag，右下角悬浮按钮 + 可展开面板。
+        </div>
+      </section>
+
+      <section>
+        <h2>3 · iframe 直接嵌入（最隔离）</h2>
+        <p style="font-size: 14px; color: #475569; margin: 0;">
+          不想加载任何 JS 也可以，直接把 iframe 指到宿主的 <code>embed.html</code>。
+          postMessage 协议可以和父页面通信（见下方 README）。
+        </p>
+        <pre><code>&lt;iframe
+  src="https://&lt;webling-host&gt;/embed/embed.html?api_key=demo&amp;character_id=ling"
+  allow="microphone; autoplay; clipboard-write"
+  style="width: 380px; height: 620px; border: 0;"
+&gt;&lt;/iframe&gt;</code></pre>
+      </section>
+
+      <section>
+        <h2>父子通信（postMessage）</h2>
+        <p style="font-size: 14px; color: #475569; margin: 0;">
+          所有形态共用同一套合约：<code>target: 'webling'</code>（父→子）、
+          <code>source: 'webling'</code>（子→父）。
+        </p>
+        <pre><code>// 父 → iframe
+iframe.contentWindow.postMessage(
+  { target: 'webling', type: 'send', text: '你好' },
+  '*',
+);
+
+// iframe → 父
+window.addEventListener('message', (e) =&gt; {
+  if (e.data?.source !== 'webling') return;
+  // e.data.type: ready | session | state | message | error | closed | request_close
+});</code></pre>
+      </section>
+    </main>
+
+    <!-- 本页的 Script tag 模式演示：embed.js 会自动挂浮动按钮 -->
+    <script src="/embed/embed.js" data-api-key="demo" data-character-id="ling" async defer></script>
+    <!-- Custom Element 演示依赖 web-component.js -->
+    <script src="/embed/web-component.js" defer></script>
+  </body>
+</html>

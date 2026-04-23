@@ -18,6 +18,46 @@ importers:
         specifier: ^5.6.3
         version: 5.6.3
 
+  apps/embed:
+    dependencies:
+      '@webling/core':
+        specifier: workspace:*
+        version: link:../../packages/core
+      '@webling/live2d-kit':
+        specifier: workspace:*
+        version: link:../../packages/live2d-kit
+      pinia:
+        specifier: ^2.2.6
+        version: 2.3.1(typescript@5.6.3)(vue@3.5.33(typescript@5.6.3))
+      vue:
+        specifier: ^3.5.32
+        version: 3.5.33(typescript@5.6.3)
+    devDependencies:
+      '@vitejs/plugin-vue':
+        specifier: ^5.2.1
+        version: 5.2.4(vite@6.4.2(@types/node@22.19.17)(jiti@1.21.7)(terser@5.46.1))(vue@3.5.33(typescript@5.6.3))
+      '@vue/tsconfig':
+        specifier: ^0.7.0
+        version: 0.7.0(typescript@5.6.3)(vue@3.5.33(typescript@5.6.3))
+      autoprefixer:
+        specifier: ^10.4.20
+        version: 10.5.0(postcss@8.5.10)
+      postcss:
+        specifier: ^8.5.1
+        version: 8.5.10
+      tailwindcss:
+        specifier: ^3.4.17
+        version: 3.4.19
+      typescript:
+        specifier: ^5.6.3
+        version: 5.6.3
+      vite:
+        specifier: ^6.0.0
+        version: 6.4.2(@types/node@22.19.17)(jiti@1.21.7)(terser@5.46.1)
+      vue-tsc:
+        specifier: ^2.2.0
+        version: 2.2.12(typescript@5.6.3)
+
   apps/web:
     dependencies:
       '@webling/core':
@@ -72,24 +112,6 @@ importers:
 
   packages/core:
     devDependencies:
-      typescript:
-        specifier: ~5.6.3
-        version: 5.6.3
-      vitest:
-        specifier: ^2.1.8
-        version: 2.1.9(@types/node@22.19.17)(terser@5.46.1)
-
-  packages/embed:
-    devDependencies:
-      '@webling/core':
-        specifier: workspace:*
-        version: link:../core
-      '@webling/live2d-kit':
-        specifier: workspace:*
-        version: link:../live2d-kit
-      '@webling/ui':
-        specifier: workspace:*
-        version: link:../ui
       typescript:
         specifier: ~5.6.3
         version: 5.6.3
