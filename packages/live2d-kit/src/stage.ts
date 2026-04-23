@@ -219,6 +219,9 @@ export class AvatarStage {
   // motion picker 默认会把 expression 抹掉，只能在我们主动调 speak/motion 时硬把
   // 它"重新设上"
   private currentExpressionName: string | null = null;
+  // 表情兜底 ticker：idle motion 可能在 speak 之间的空隙抹掉表情，固定每 400ms
+  // 把 currentExpressionName 再 apply 一次，视觉上能把抹除的时间窗压到不可感知
+  private expressionTicker: ReturnType<typeof setInterval> | null = null;
 
   async speak(soundUrl: string, opts: SpeakOptions = {}): Promise<void> {
     const model = this.model as {
@@ -319,6 +322,17 @@ export class AvatarStage {
     const model = this.model as { expression?: (id?: string | number) => Promise<boolean> } | null;
     // 记住当前表情名（无论 apply 是否成功），供后续 speak/motion 把它当参数带回去
     this.currentExpressionName = name;
+    // 启动兜底 ticker（若尚未启动）：每 400ms 再 apply 一次，确保 idle motion
+    // 抹除后马上就恢复
+    if (!this.expressionTicker) {
+      this.expressionTicker = setInterval(() => {
+        const m = this.model as { expression?: (id?: string | number) => Promise<boolean> } | null;
+        const n = this.currentExpressionName;
+        if (!m?.expression || !n) return;
+        // fork 的 expression() 内部对"相同表情再次 apply"开销很小；失败静默吞
+        m.expression(n).catch(() => { /* ignore */ });
+      }, 400);
+    }
     if (!model?.expression) return;
     try {
       await model.expression(name);
@@ -369,6 +383,11 @@ export class AvatarStage {
     this.resizeObserver = null;
     this.stopPlaceholderMouth();
     this.model?.stopSpeaking?.();
+    if (this.expressionTicker) {
+      clearInterval(this.expressionTicker);
+      this.expressionTicker = null;
+    }
+    this.currentExpressionName = null;
     this.model = null;
     this.host = null;
     const app = this.appAny as { destroy?: (a?: boolean, b?: unknown) => void } | null;
