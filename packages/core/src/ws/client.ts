@@ -44,24 +44,46 @@ export class ChatSocket {
     const ws = new this.WS(url);
     this.ws = ws;
 
-    ws.onopen = () => {
-      this.reconnectDelay = this.opts.minReconnectDelay ?? 500;
-      this.opts.onOpen?.();
-    };
-    ws.onmessage = (ev) => this.handleMessage(ev.data);
-    ws.onerror = () => this.opts.onError?.(new Error('websocket error'));
-    ws.onclose = (ev) => {
-      this.opts.onClose?.(ev.code, ev.reason);
-      this.ws = null;
-      if (!this.stopped) this.scheduleReconnect();
-    };
+    // The caller expects `await connect()` to mean the socket is OPEN and
+    // ready to send. Resolve on the first of open/error/close so a pending
+    // `sendUserMessage` never races a CONNECTING socket.
+    return new Promise<void>((resolve, reject) => {
+      let settled = false;
+      const settle = (fn: () => void) => {
+        if (settled) return;
+        settled = true;
+        fn();
+      };
+
+      ws.onopen = () => {
+        this.reconnectDelay = this.opts.minReconnectDelay ?? 500;
+        this.opts.onOpen?.();
+        settle(resolve);
+      };
+      ws.onmessage = (ev) => this.handleMessage(ev.data);
+      ws.onerror = () => {
+        this.opts.onError?.(new Error('websocket error'));
+        settle(() => reject(new Error('websocket error')));
+      };
+      ws.onclose = (ev) => {
+        this.opts.onClose?.(ev.code, ev.reason);
+        this.ws = null;
+        if (!this.stopped) this.scheduleReconnect();
+        settle(() => reject(new Error(`websocket closed before open (code=${ev.code})`)));
+      };
+    });
+  }
+
+  /** True iff the socket is OPEN (not CONNECTING / CLOSING / CLOSED). */
+  get isOpen(): boolean {
+    return this.ws?.readyState === this.WS.OPEN;
   }
 
   send(event: ClientEvent): void {
-    if (this.ws?.readyState !== this.WS.OPEN) {
+    if (!this.isOpen) {
       throw new Error('WebSocket is not open');
     }
-    this.ws.send(JSON.stringify(event));
+    this.ws!.send(JSON.stringify(event));
   }
 
   sendUserMessage(text: string): void {
