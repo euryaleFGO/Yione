@@ -69,6 +69,12 @@
 
 **依赖：** M6（已完成）
 
+**计划：** 3 plans
+Plans:
+- [ ] 02-01-PLAN.md — MongoDB 连接 + Character 模型 + API
+- [ ] 02-02-PLAN.md — Session/Tenant/Speaker 服务迁移到 MongoDB
+- [ ] 02-03-PLAN.md — seed 脚本 + 前端角色切换 UI
+
 ---
 
 ### Phase 3: M8 Embed Script
