@@ -25,18 +25,11 @@ declare global {
 let bindingsPromise: Promise<{ PIXI: PixiModule; live2d: Live2DBindings }> | null = null;
 
 async function loadBindings(): Promise<{ PIXI: PixiModule; live2d: Live2DBindings }> {
-  // Single-shot so Live2DModel.registerTicker isn't called twice across mounts.
   if (bindingsPromise) return bindingsPromise;
-
   bindingsPromise = (async () => {
     const PIXI = await import('pixi.js');
-    // pixi-live2d-display reads `window.PIXI` at import-evaluation time to
-    // pick up Ticker/DisplayObject — must be set BEFORE the live2d import.
     if (typeof window !== 'undefined') window.PIXI = window.PIXI ?? PIXI;
     const live2d = await import('pixi-live2d-display-lipsyncpatch/cubism4');
-    // Motion updates are driven by PIXI.Ticker. If this isn't registered, the
-    // model's internal drawable arrays never initialize and the first render
-    // crashes in CubismRenderer.doDrawModel (see PLAN §14 "关键风险").
     const LiveCtor = live2d.Live2DModel as unknown as {
       registerTicker?: (ticker: unknown) => void;
     };
@@ -57,12 +50,26 @@ export interface StageCallbacks {
   onStatusChange?: (status: StageStatus) => void;
 }
 
-type AnyDisplayObject = { width: number; height: number; position: { set(x: number, y: number): void }; scale: { set(v: number): void } };
+type Live2DInstance = {
+  width: number;
+  height: number;
+  position: { set(x: number, y: number): void };
+  scale: { set(v: number): void; x: number; y: number };
+  anchor?: { set(x: number, y: number): void };
+  internalModel?: {
+    width: number;
+    height: number;
+    originalWidth?: number;
+    originalHeight?: number;
+  };
+};
 
 export class AvatarStage {
   private appAny: unknown = null;
-  private model: AnyDisplayObject | null = null;
+  private model: Live2DInstance | null = null;
   private resizeObserver: ResizeObserver | null = null;
+  private host: HTMLElement | null = null;
+  private config: AvatarConfig = DEFAULT_AVATAR;
   private status: StageStatus = { kind: 'idle' };
 
   constructor(private readonly cb: StageCallbacks = {}) {}
@@ -87,23 +94,30 @@ export class AvatarStage {
         autoDensity: true,
         resolution: Math.min(window.devicePixelRatio || 1, 2),
       });
-      host.appendChild(app.view as unknown as HTMLCanvasElement);
+      const canvas = app.view as unknown as HTMLCanvasElement;
+      canvas.style.display = 'block';
+      canvas.style.width = '100%';
+      canvas.style.height = '100%';
+      host.appendChild(canvas);
+
       this.appAny = app;
+      this.host = host;
+      this.config = config;
 
-      const model = (await live2d.Live2DModel.from(config.modelUrl)) as unknown as AnyDisplayObject & {
-        anchor?: { set: (x: number, y: number) => void };
-      };
+      const model = (await live2d.Live2DModel.from(config.modelUrl)) as unknown as Live2DInstance;
       this.model = model;
-
-      const [ax, ay] = config.anchor ?? [0.5, 0.9];
-      model.anchor?.set(ax, ay);
-      model.scale.set(config.scale ?? (DEFAULT_AVATAR.scale as number));
-      this.centerModel();
+      model.anchor?.set(0.5, 0.5);
 
       app.stage.addChild(model as unknown as Parameters<typeof app.stage.addChild>[0]);
+      this.fitModel();
 
-      this.resizeObserver = new ResizeObserver(() => this.centerModel());
+      // Re-fit on container resize. `resizeTo` on PIXI polls via ticker and
+      // can race with user events; we reposition ourselves against CSS pixels
+      // instead of renderer-buffer pixels to avoid DPR scaling surprises.
+      this.resizeObserver = new ResizeObserver(() => this.fitModel());
       this.resizeObserver.observe(host);
+      // One extra rAF settle — some browsers emit initial host dims of 0
+      requestAnimationFrame(() => this.fitModel());
 
       this.setStatus({ kind: 'ready' });
     } catch (err) {
@@ -117,6 +131,7 @@ export class AvatarStage {
     this.resizeObserver?.disconnect();
     this.resizeObserver = null;
     this.model = null;
+    this.host = null;
     const app = this.appAny as { destroy?: (a?: boolean, b?: unknown) => void } | null;
     if (app?.destroy) {
       app.destroy(true, { children: true, texture: true, baseTexture: true });
@@ -129,10 +144,37 @@ export class AvatarStage {
     return this.status;
   }
 
-  private centerModel(): void {
-    const app = this.appAny as { renderer?: { width: number; height: number } } | null;
-    if (!this.model || !app?.renderer) return;
-    this.model.position.set(app.renderer.width / 2, app.renderer.height);
+  /**
+   * Fit the model to the host element (CSS pixels), centered with a bit of
+   * vertical offset so the face sits comfortably high in the frame.
+   */
+  private fitModel(): void {
+    const host = this.host;
+    const model = this.model;
+    if (!host || !model) return;
+
+    const w = host.clientWidth;
+    const h = host.clientHeight;
+    if (w <= 0 || h <= 0) return;
+
+    // The model's natural dimensions (before any scale applied). For Cubism 4
+    // models the original canvas size is available on the internalModel; fall
+    // back to a sensible default if not.
+    const naturalH =
+      model.internalModel?.originalHeight ??
+      model.internalModel?.height ??
+      model.height / (model.scale.y || 1) ??
+      2000;
+
+    const fillFactor = this.config.scale ?? 0.9; // fraction of host height to fill
+    const desiredScale = (h * fillFactor) / naturalH;
+
+    model.scale.set(desiredScale);
+
+    // Center horizontally; anchor 0.5/0.5 means model center aligns with pos.
+    const [, ay] = this.config.anchor ?? [0.5, 0.5];
+    const biasY = (ay - 0.5) * model.height; // interpret legacy anchor Y as vertical bias
+    model.position.set(w / 2, h / 2 + biasY);
   }
 
   private setStatus(next: StageStatus): void {
